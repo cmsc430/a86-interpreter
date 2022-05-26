@@ -1,4 +1,5 @@
 \documentclass{article}
+\usepackage[margin=0.5in]{geometry}
 \usepackage[T1]{fontenc}
 
 \usepackage{mathtools}
@@ -49,9 +50,6 @@ We provide a definition of the abstract syntax of the \lang{} language.
   \\
   \nonterm{prog} & ::= & \multicolumn{7}{l}{\term{Program}\ (\nonterm{inst} \ldots)}
 \end{tabular}
-
-\blankline
-
 \begin{tabular}{cclll}
   \nonterm{inst} & ::= & \term{Label} & \nonterm{loc} \\
                  &  |  & \term{Ret} \\
@@ -79,7 +77,7 @@ We provide a definition of the abstract syntax of the \lang{} language.
 
 Before formalizing our semantics, we provide an informal specification. These
 definitions are based on existing documentation and code. A formal semantics is
-presented in the next section.
+presented in the next section.  % TODO: Write down formal semantics.
 
 \subsection{Program}
 
@@ -127,7 +125,6 @@ comparison operations:
   \item \term{CF} --- Carry Flag
 
     Set if the (unsigned) arithmetic operation required an extra bit.
-    % TODO: Do we even use CF? I think we might be able to leave it out.
   \end{itemize}
 
 }
