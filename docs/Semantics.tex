@@ -152,21 +152,65 @@ There are 20 supported instructions in \lang{}, which work as follows:
 
 {\renewcommand\labelitemii{}\renewcommand\labelitemiii{}
   \begin{itemize}
+    % Label
   \item \texttt{Label l} creates a new label named \texttt{l} that points to the
     next instruction.
+    % Ret
   \item \texttt{Ret} pops an address from the stack and jumps to it.
+    % Call
   \item \texttt{Call dst} pushes the return address onto the stack, then jumps
     to the address indicated by the label or register in \texttt{dst}.
+    % Mov
   \item \texttt{Mov dst src} moves the contents of/value at \texttt{src} into
     \texttt{dst}.
-    \begin{itemize}
-    \item NOTE: Either \texttt{dst} or \texttt{src} may be an offset, but not
-      both.
-    \end{itemize}
+
+    NOTE: Either \texttt{dst} or \texttt{src} may be an offset, but not both.
+    % Add
   \item \texttt{Add dst src} adds \texttt{src} to \texttt{dst} and writes the
     result to \texttt{dst}.
+
+    Imagine we have only 4-bit numbers (instead of the 64 bits the \lang{}
+    actually uses). Suppose we add \texttt{0111} and \texttt{1010}:
+
+    \begin{center}
+      \begin{tabular}{rl}
+        \texttt{0111} \\
+        \texttt{1010} & \texttt{+} \\
+        \hline
+        \texttt{10001}
+      \end{tabular}
+    \end{center}
+
+    Due to carries, we have ended up with a 5-bit result, but we can only have 4
+    bits to a number. The most-significant bit will be lost, but the \texttt{CF}
+    flag will be set to indicate a carry has occurred.
+
+    Here are some example additions of other 4-bit numbers:
+
+    \begin{center}
+      \begin{tabular}{ccccccc}
+        \texttt{OF} & \texttt{SF} & \texttt{ZF} & \texttt{CF} & Left Operand  & Right Operand & Result \\
+        \hline
+        % Original example.
+        \texttt{0}  & \texttt{0}  & \texttt{0}  & \texttt{1}  & \texttt{0111} & \texttt{1010} & \texttt{0001} \\
+        % No flags (simple addition).
+        \texttt{0}  & \texttt{0}  & \texttt{0}  & \texttt{0}  & \texttt{0010} & \texttt{0001} & \texttt{0011} \\
+        % SF only. (Addition of positive to negative.)
+        \texttt{0}  & \texttt{1}  & \texttt{0}  & \texttt{0}  & \texttt{1100} & \texttt{0001} & \texttt{1101} \\
+        % OF, SF.
+        \texttt{1}  & \texttt{1}  & \texttt{0}  & \texttt{0}  & \texttt{0111} & \texttt{0001} & \texttt{1000} \\
+        % CF and SF, but no OF.
+        \texttt{0}  & \texttt{1}  & \texttt{0}  & \texttt{1}  & \texttt{1100} & \texttt{1101} & \texttt{1001}
+      \end{tabular}
+    \end{center}
+
+    NOTE: The adding circuits do not even think about whether the numbers are
+    signed or unsigned, because the addition is performed the same in both
+    cases.
+    % Sub
   \item \texttt{Sub dst src} subtracts \texttt{src} from \texttt{dst} and writes
     the result to \texttt{dst}.
+    % Cmp
   \item \texttt{Cmp a1 a2} compares \texttt{a1} to \texttt{a2} by subtracting
     the former from the latter and sets the flags according to the result:
     \begin{itemize}
@@ -182,43 +226,54 @@ There are 20 supported instructions in \lang{}, which work as follows:
         \texttt{a2 - a1} $>$ \texttt{0}.
       \end{itemize}
     \end{itemize}
+    % Jmp
   \item \texttt{Jmp dst} jumps to the address at \texttt{dst}.
+    % Je
   \item \texttt{Je dst} jumps to the address at \texttt{dst} if \texttt{ZF} is
     set.
+    % Jne
   \item \texttt{Jne dst} jumps to the address at \texttt{dst} if \texttt{ZF} is
     \emph{not} set.
+    % Jl
   \item \texttt{Jl dst} jumps to the address at \texttt{dst} if \texttt{SF} and
     \texttt{OF} have different values.
+    % Jg
   \item \texttt{Jg dst} jumps to the address at \texttt{dst} if \texttt{SF} and
     \texttt{OF} are set to the same value and \texttt{ZF} is unset.
+    % And
   \item \texttt{And dst src} computes the bitwise AND (\texttt{\&{}}) of the
     operands and stores the result in \texttt{dst}.
+    % Or
   \item \texttt{Or dst src} computes the bitwise OR (\texttt{|}) of the operands
     and stores the result in \texttt{dst}.
+    % Xor
   \item \texttt{Xor dst src} computes the bitwise XOR (\texttt{\^{}}) of the
     operands and stores the result in \texttt{dst}.
+    % Sal
   \item \texttt{Sal dst i} arithmetically shifts the bits in \texttt{dst} to the
     left by \texttt{i} bits and stores the result in \texttt{dst}. The new bits
     from the right are \texttt{0}s, and the \texttt{CF} flag is updated to the
     value of the most-significant bit during each shift.
-    \begin{itemize}
-    \item NOTE: If \texttt{i} is \texttt{1}, the \texttt{OF} flag is cleared if
-      the most-significant bit of the result is the same as the \texttt{CF}
-      flag. Otherwise, it is set.
-    \end{itemize}
+
+    NOTE: When \texttt{i} is \texttt{1}, the \texttt{OF} flag is set if the
+    most-significant bit of the result is different from the value of the
+    \texttt{CF} flag, and cleared if they are the same.
+    % Sar
   \item \texttt{Sar dst src} arithmetically shifts the bits in \texttt{dst} to
     the right by \texttt{i} bits and stores the result in \texttt{dst}. The new
     bits from the left are duplicated from the original most-significant bit,
     and the \texttt{CF} flag is updated to the value of the least-significant
     bit during each shift.
-    \begin{itemize}
-      % TODO: Do this need to be specified? Probably can just remove it...
-    \item NOTE: The \texttt{OF} flag is always cleared.
-    \end{itemize}
+
+    NOTE: In contrast to \texttt{Sal}, the \texttt{OF} flag is always cleared
+    for \texttt{Sar}.
+    % Push
   \item \texttt{Push src} decrements the stack pointer and stores the
     \texttt{src} operands on the top of the stack.
+    % Pop
   \item \texttt{Pop dst} loads the value from the top of the stack into the
     \texttt{dst} operand and increments the stack pointer.
+    % Lea
   \item \texttt{Lea dst l} loads the address of the label \texttt{l} and stores
     it in \texttt{dst}.
   \end{itemize}
