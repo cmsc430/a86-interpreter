@@ -5,16 +5,6 @@
 
 (provide (all-defined-out))
 
-;; The size of words, given in bits.
-(define word-size-bits 64)
-(define word-size-bytes (/ word-size-bits 8))
-
-(define (format-word value [mode 'binary])
-  (match mode
-    [(or 'binary 'b)
-     (~r value #:base 2 #:min-width word-size-bits #:pad-string "0")]
-    [(or 'hex 'h)
-     (~r value #:base 16 #:min-width word-size-bytes #:pad-string "0")]))
 
 ;; The State is a recording of the labels, the registers, the flags, and memory.
 ;; It should be considered immutable and thus should be modified functionally.
