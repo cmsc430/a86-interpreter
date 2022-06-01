@@ -50,7 +50,7 @@
        [(or 'binary 'bin 'b)
         (~r value #:base 2 #:min-width (* 8 word-size) #:pad-string "0")]
        [(or 'hexadecimal 'hex 'h)
-        (~r value #:base 16 #:min-width (* 8 word-size) #:pad-string "0")])]))
+        (~r value #:base 16 #:min-width word-size #:pad-string "0")])]))
 
 ;; Given an address, produces the next word-aligned address from the given
 ;; address's word-aligned address.
