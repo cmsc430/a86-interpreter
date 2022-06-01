@@ -23,12 +23,34 @@
 ;;       determines how to format the value; accepted formats are
 ;;           'binary OR 'bin OR 'b      - binary formatting
 ;;           'hexadecimal OR 'hex OR 'h - hexadecimal formatting
-(define (format-word value [mode 'binary])
-  (match mode
-    [(or 'binary 'bin 'b)
-     (~r value #:base 2 #:min-width word-size-bits #:pad-string "0")]
-    [(or 'hexadecimal 'hex 'h)
-     (~r value #:base 16 #:min-width word-size-bytes #:pad-string "0")]))
+;;
+;;   word-size:
+;;       the number of bytes that correspond to one word
+(define (format-word value [mode 'binary] [word-size word-size-bytes])
+  (cond
+    [(bytes? value)
+     (unless (= (bytes-length value) word-size)
+       (raise-user-error 'format-word
+                         "given byte string contains ~a bytes; expected ~a"
+                         (bytes-length value)
+                         word-size))
+     (apply string-append
+            (map (λ (b) (format-word b mode 1))
+                 (bytes->list value)))]
+    [(integer? value)
+     (unless (> value 0)
+       (raise-user-error 'format-word
+                         "given negative integer ~a"
+                         value))
+     (unless (< value (sub1 (expt 2 (* 8 word-size))))
+       (raise-user-error 'format-word
+                         "given too-large integer ~a"
+                         value))
+     (match mode
+       [(or 'binary 'bin 'b)
+        (~r value #:base 2 #:min-width (* 8 word-size) #:pad-string "0")]
+       [(or 'hexadecimal 'hex 'h)
+        (~r value #:base 16 #:min-width (* 8 word-size) #:pad-string "0")])]))
 
 ;; Given an address, produces the next word-aligned address from the given
 ;; address's word-aligned address.
@@ -87,6 +109,8 @@
 (define max-cell-depth 10)
 
 ;; Sets up the memory to be used during emulation. All arguments are optional.
+;; Returns two values: the next free word-aligned address, and a [Memory] struct
+;; that should be passed to all the memory-related functions.
 ;;
 ;;   instructions:
 ;;       A list of instructions to include in the initial (highest) memory
@@ -132,20 +156,21 @@
                            [handling-strategy handling-strategy-unlimited]
                            [max-depth max-cell-depth]
                            [error-on-initialized-overwrite #t])
-  (let ([address-instruction-pairs
-         (for/fold ([address (align-address-to-word max-address)]
-                    [address-instruction-pairs (list)]
-                    #:result address-instruction-pairs)
-                   ([instruction instructions])
-           (values (next-word-aligned-address address)
-                   (cons (cons address (vector-immutable (Cell 0 instruction)))
-                         address-instruction-pairs)))])
-    (Memory max-address
-            min-address
-            (make-hash address-instruction-pairs)
-            handling-strategy
-            max-depth
-            error-on-initialized-overwrite)))
+  (let-values
+      ([(next-address address-instruction-pairs)
+        (for/fold ([address (align-address-to-word max-address)]
+                   [address-instruction-pairs (list)])
+                  ([instruction instructions])
+          (values (next-word-aligned-address address)
+                  (cons (cons address (vector-immutable (Cell 0 instruction)))
+                        address-instruction-pairs)))])
+    (values next-address
+            (Memory max-address
+                    min-address
+                    (make-hash address-instruction-pairs)
+                    handling-strategy
+                    max-depth
+                    error-on-initialized-overwrite))))
 
 ;; Produces an empty set of bytes.
 (define (make-empty-bytes) (bytes->immutable-bytes (make-bytes word-size-bytes 0)))
