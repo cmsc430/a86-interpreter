@@ -44,7 +44,13 @@
 ;;            of Cells
 ;;   handling: one of the memory handling strategies
 ;;   max-depth: the maximum depth if a limited strategy is used
-(struct Memory (max-address min-address memhash handling max-depth) #:transparent)
+(struct Memory (max-address
+                min-address
+                memhash
+                handling
+                max-depth
+                error-on-overwrite)
+  #:transparent)
 
 ;; The supported memory handling strategies.
 (define handling-strategy-unlimited 'unlimited)
@@ -58,7 +64,8 @@
                            [max-address #xffffffffffffffff]
                            [min-address #xffff800000000000]
                            [handling-strategy handling-strategy-unlimited]
-                           [max-depth max-cell-depth])
+                           [max-depth max-cell-depth]
+                           [error-on-initialized-overwrite #t])
   (let ([address-instruction-pairs
          (for/fold ([address (align-address-to-word max-address)]
                     [address-instruction-pairs (list)]
@@ -71,7 +78,8 @@
             min-address
             (make-hash address-instruction-pairs)
             handling-strategy
-            max-depth)))
+            max-depth
+            error-on-initialized-overwrite)))
 
 ;; An empty set of bytes.
 (define (make-empty-bytes) (bytes->immutable-bytes (make-bytes word-size-bytes 0)))
@@ -103,6 +111,9 @@
          (>= (memory-depth memory address)
              (Memory-max-depth memory)))))
 
+(define (specialized-initial-value? memory address)
+  (not (bytes? (memory-ref memory address))))
+
 ;; Stores the given value (with its corresponding tick) at the indicated address
 ;; in memory. This is a stateful action; no value is returned.
 (define (memory-set! memory address tick value)
@@ -115,6 +126,12 @@
      (raise-user-error 'memory-set! "expected address less than ~a; got ~a" (Memory-max-address memory) address)]
     [(< address (Memory-min-address memory))
      (raise-user-error 'memory-set! "expected address greater than ~a; got ~a" (Memory-min-address memory) address)]
+    [(and (specialized-initial-value? memory address)
+          (Memory-error-on-overwrite memory))
+     (raise-user-error 'memory-set!
+                       "cannot overwrite memory initialized with special value ~v at address ~a"
+                       (memory-ref memory address)
+                       address)]
     [(at-max-depth? memory address)
      (raise-user-error 'memory-set!
                        "address ~a has been written to the maximum allowed number of times (~a)"
