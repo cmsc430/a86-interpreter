@@ -3,13 +3,19 @@
 (provide word-size-bits
          word-size-bytes
          format-word
+         word-aligned-offset
          next-word-aligned-address
          align-address-to-word
          aligned-to-word?
          initialize-memory
          memory-ref
+         memory-depth
+         at-max-depth?
+         specialized-initial-value?
+         initialized?
          memory-set!
-         unsafe-memory-set!)
+         unsafe-memory-set!
+         memory-map)
 
 ;; The size of words, given in bits.
 (define word-size-bits 64)
@@ -52,10 +58,15 @@
        [(or 'hexadecimal 'hex 'h)
         (~r value #:base 16 #:min-width word-size #:pad-string "0")])]))
 
+;; Given an address, produces the word-aligned address that is [offset-in-words]
+;; words lower than the given' address word-aligned address.
+(define (word-aligned-offset address offset-in-words)
+  (- (align-address-to-word address) (* word-size-bytes offset-in-words)))
+
 ;; Given an address, produces the next word-aligned address from the given
 ;; address's word-aligned address.
 (define (next-word-aligned-address address)
-  (- (align-address-to-word address) word-size-bytes))
+  (word-aligned-offset address 1))
 
 ;; Given an address, produces the next lowest word-aligned address, according to
 ;; the value of [word-size-bytes]. If the given address is word-aligned, it is
@@ -67,6 +78,21 @@
 ;; value of [word-size-bytes].
 (define (aligned-to-word? address)
   (= 0 (modulo address word-size-bytes)))
+
+(struct address-stream (hi-addr lo-addr)
+  #:guard (λ (ha la _)
+            ;; TODO: Add checks to ensure the stream will behave well.
+            (values (align-address-to-word ha)
+                    (align-address-to-word la)))
+  #:methods gen:stream
+  [(define (stream-empty? stream)
+     (= (align-address-to-word (address-stream-hi-addr stream))
+        (align-address-to-word (address-stream-lo-addr stream))))
+   (define (stream-first stream)
+     (address-stream-hi-addr stream))
+   (define (stream-rest stream)
+     (address-stream (next-word-aligned-address (address-stream-hi-addr stream))
+                     (address-stream-lo-addr stream)))])
 
 ;; A pair of a time tick with a value.
 ;; TODO: Remove transparency?
@@ -209,6 +235,11 @@
 (define (specialized-initial-value? memory address)
   (not (bytes? (memory-ref memory address))))
 
+;; Determines whether the indicated address actually holds a value.
+(define (initialized? memory address)
+  (or (memory-ref memory address #f)
+      #t))
+
 ;; Stores the given value (with its corresponding tick) at the indicated address
 ;; in memory. This is a stateful action; no value is returned.
 (define (memory-set! memory address tick value)
@@ -247,3 +278,18 @@
                           (vector->list (hash-ref (Memory-memhash memory)
                                                   address
                                                   (vector-immutable)))))))
+
+;; Maps over the values contained in memory from [hi-address] to [lo-address].
+;; If either address is left as [#f], the corresponding default from the
+;; [memory] is used.
+;;
+;; NOTE: The [proc] procedure should be a single-argument function that takes in
+;; a memory value. For most values this will be a byte string, but be careful if
+;; your mapping encompasses any special initialized memory.
+(define (memory-map proc memory [hi-address #f] [lo-address #f])
+  (unless hi-address
+    (set! hi-address (Memory-max-address memory)))
+  (unless lo-address
+    (set! lo-address (Memory-min-address memory)))
+  (let ([stream (address-stream hi-address lo-address)])
+    (stream->list (stream-map (λ (address) (proc (memory-ref memory address))) stream))))
