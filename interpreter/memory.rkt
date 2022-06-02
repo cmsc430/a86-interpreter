@@ -15,7 +15,9 @@
          initialized?
          memory-set!
          unsafe-memory-set!
-         memory-map)
+         memory-map
+         memory-filter
+         memory-fold)
 
 ;; The size of words, given in bits.
 (define word-size-bits 64)
@@ -283,13 +285,58 @@
 ;; If either address is left as [#f], the corresponding default from the
 ;; [memory] is used.
 ;;
-;; NOTE: The [proc] procedure should be a single-argument function that takes in
-;; a memory value. For most values this will be a byte string, but be careful if
-;; your mapping encompasses any special initialized memory.
+;; NOTE: The [proc] procedure should be a two-argument function that takes in an
+;; address and a corresponding memory value. Most values will be byte strings,
+;; but be careful if your address range includes any specially initialized
+;; memory.
 (define (memory-map proc memory [hi-address #f] [lo-address #f])
   (unless hi-address
     (set! hi-address (Memory-max-address memory)))
   (unless lo-address
     (set! lo-address (Memory-min-address memory)))
   (let ([stream (address-stream hi-address lo-address)])
-    (stream->list (stream-map (λ (address) (proc (memory-ref memory address))) stream))))
+    (stream->list
+     (stream-map (λ (address)
+                   (proc address
+                         (memory-ref memory address)))
+                 stream))))
+
+;; Filters the values contained in memory from [hi-address] to [lo-address]. If
+;; either address is left as [#f], the corresponding default from the [memory]
+;; is used.
+;;
+;; NOTE: The [pred] predicate should be a two-argument function that takes in an
+;; address and a corresponding memory value and returns a Boolean. Most values
+;; will be byte strings, but be careful if your address range includes any
+;; specially initialized memory.
+(define (memory-filter pred memory [hi-address #f] [lo-address #f])
+  (unless hi-address
+    (set! hi-address (Memory-max-address memory)))
+  (unless lo-address
+    (set! lo-address (Memory-min-address memory)))
+  (let ([stream (address-stream hi-address lo-address)])
+    (stream->list
+     (stream-filter (λ (address)
+                      (pred address
+                            (memory-ref memory address)))
+                    stream))))
+
+;; Folds over the address from [hi-address] to [lo-address] using [proc].If
+;; either address is left as [#f], the corresponding default from the [memory]
+;; is used. The [proc] procedure should take three arguments: the accumulated
+;; value from the fold, an address, and the corresponding value in memory at
+;; that address. It should return a new accumulator, which will be passed
+;; forward to the next iteration of the fold or returned at the end. The
+;; [initial-value] is used to initialize the accumulator.
+(define (memory-fold proc initial-value memory [hi-address #f] [lo-address #f])
+  (unless hi-address
+    (set! hi-address (Memory-max-address memory)))
+  (unless lo-address
+    (set! lo-address (Memory-min-address memory)))
+  (let ([stream (address-stream hi-address lo-address)])
+    (stream-fold (λ (accumulator address)
+                   (proc accumulator
+                         address
+                         (memory-ref memory address)))
+                 initial-value
+                 stream)))
