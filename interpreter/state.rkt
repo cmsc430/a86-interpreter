@@ -12,7 +12,7 @@
 ;;   time-tick:
 ;;       An integer representing how many instructions have been evaluated.
 ;;
-;;   program-counter:
+;;   instruction-pointer:
 ;;       The address of the next instruction to execute.
 ;;
 ;;   labels:
@@ -31,12 +31,12 @@
 ;; TODO: Revise implementations of recording devices for consistency? Currently,
 ;; the registers and flags are meant to be updated functionally while the
 ;; memory is stateful.
-(struct State (time-tick program-counter labels registers flags memory) #:transparent)
+(struct State (time-tick instruction-pointer labels registers flags memory) #:transparent)
 
 ;; Given a [Program], initializes the machine state.
 (define (initialize-state program)
   (let*-values
-      ([(pc sp memory)
+      ([(ip sp memory)
         (initialize-memory (Program-instructions program))]
        [(labels)
         (memory-fold (λ (labels addr value)
@@ -48,21 +48,40 @@
                      #f sp)]
        [(registers)
         (hash-set new-registers 'rsp sp)])
-    (State 0 pc labels registers new-flags memory)))
+    (State 0 ip labels registers new-flags memory)))
 
 ;; Given a machine state, takes the next step according to the a86 semantics.
 (define (step state)
   (match state
-    [(State tick pc labels registers flags memory)
-     (match (memory-ref memory pc)
+    [(State tick ip labels registers flags memory)
+     (match (memory-ref memory ip)
        [(Label _)
+        ;; skip
         (State (add1 tick)
-               (next-word-aligned-address pc)
+               (next-word-aligned-address ip)
                labels registers flags memory)]
        [(Ret)
-        (error 'step-Ret)]
-       [(Call x)
-        (error 'step-Call)]
+        ;; ip = Mem.pop()
+        (let* ([sp (hash-ref registers 'rsp)]
+               [new-ip (memory-ref memory sp)]
+               [new-rsp (previous-word-aligned-address sp)]
+               [new-registers (hash-set registers 'rsp new-rsp)])
+          (State (add1 tick)
+                 new-ip labels new-registers flags memory))]
+       [(Call dst)
+        ;; Mem.push(ip + wordsize)
+        ;; ip = dst
+        (let* ([return-address (next-word-aligned-address ip)]
+               [new-ip (if (register? dst)
+                           (hash-ref registers dst)
+                           ;; TODO: runtime check valid address
+                           dst)]
+               [sp (hash-ref registers 'rsp)]
+               [new-sp (next-word-aligned-address sp)]
+               [new-registers (hash-set registers 'rsp new-sp)])
+          (memory-set! memory sp tick return-address)
+          (State (add1 tick)
+                 new-ip labels registers flags memory))]
        [(Mov dst src)
         (error 'step-Mov)]
        [(Add dst src)
@@ -96,4 +115,6 @@
        [(Pop a1)
         (error 'step-Pop)]
        [(Lea dst x)
-        (error 'step-Lea)])]))
+        (error 'step-Lea)]
+       [instruction
+        (raise-user-error 'step "unrecognized instruction at address ~a: ~v" ip instruction)])]))
