@@ -4,6 +4,7 @@
          word-size-bytes
          format-word
          word-aligned-offset
+         previous-word-aligned-address
          next-word-aligned-address
          align-address-to-word
          aligned-to-word?
@@ -64,6 +65,11 @@
 ;; words lower than the given' address word-aligned address.
 (define (word-aligned-offset address offset-in-words)
   (- (align-address-to-word address) (* word-size-bytes offset-in-words)))
+
+;; Given an address, produces the previous word-aligned address from the given
+;; address's word-aligned address.
+(define (previous-word-aligned-address address)
+  (word-aligned-offset address -1))
 
 ;; Given an address, produces the next word-aligned address from the given
 ;; address's word-aligned address.
