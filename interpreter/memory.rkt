@@ -120,6 +120,8 @@
 ;;   error-on-overwrite:
 ;;       Whether to prevent attempts by [memory-set!] to overwrite addresses
 ;;       that currently hold non-byte-string values.
+;;
+;; TODO: Remove transparency?
 (struct Memory (max-address
                 min-address
                 memhash
@@ -184,15 +186,17 @@
                            [handling-strategy handling-strategy-unlimited]
                            [max-depth max-cell-depth]
                            [error-on-initialized-overwrite #t])
-  (let-values
-      ([(next-address address-instruction-pairs)
-        (for/fold ([address (align-address-to-word max-address)]
+  (let*-values
+      ([(first-address) (align-address-to-word max-address)]
+       [(next-address address-instruction-pairs)
+        (for/fold ([address first-address]
                    [address-instruction-pairs (list)])
                   ([instruction instructions])
           (values (next-word-aligned-address address)
                   (cons (cons address (vector-immutable (Cell 0 instruction)))
                         address-instruction-pairs)))])
-    (values next-address
+    (values first-address
+            next-address
             (Memory max-address
                     min-address
                     (make-hash address-instruction-pairs)
