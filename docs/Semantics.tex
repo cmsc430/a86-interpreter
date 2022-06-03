@@ -97,6 +97,11 @@ There are sixteen 64-bit registers, each corresponding to one of the names in
 \nonterm{r64}. The special register reference \term{eax} refers to the lower 32
 bits of the \term{rax} register.
 
+There is, technically, an additional register, \term{rip}, known as the
+``instruction pointer''. This register keeps track of the memory address to go
+to for the next instruction. We do not expose this register directly, so no more
+is said of it here.
+
 \subsection{Flags}
 
 There are four single-bit registers, called \emph{flags}, each corresponding to
@@ -155,8 +160,9 @@ There are 20 supported instructions in \lang{}, which work as follows:
     % Ret
   \item \texttt{Ret} pops an address from the stack and jumps to it.
     % Call
-  \item \texttt{Call dst} pushes the return address onto the stack, then jumps
-    to the address indicated by the label or register in \texttt{dst}.
+  \item \texttt{Call dst} pushes the next instruction address onto the stack,
+    then jumps to the address indicated by the label or register in
+    \texttt{dst}.
     % Mov
   \item \texttt{Mov dst src} moves the contents of/value at \texttt{src} into
     \texttt{dst}.
