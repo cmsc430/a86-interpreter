@@ -1,5 +1,7 @@
 #lang racket
 
+(require (for-syntax syntax/parse))
+
 (provide (all-defined-out))
 
 ;; The registers are represented as a hashmap from register names to values.
@@ -21,3 +23,18 @@
   (apply hash (flatten (map (λ (f) (list f #f)) flag-names))))
 (define (flag? f)
   (member f flag-names))
+
+(define-syntax (make-new-flags stx)
+  (syntax-parse stx
+    [(_ (~optional (~or (~seq #:overflow overflow)
+                        (~seq #:of overflow)))
+        (~optional (~or (~seq #:sign sign)
+                        (~seq #:sf sign)))
+        (~optional (~or (~seq #:zero zero)
+                        (~seq #:zf zero)))
+        (~optional (~or (~seq #:carry carry)
+                        (~seq #:cf carry))))
+     #'(hash 'OF (~? (~@ overflow) (~@ #f))
+             'SF (~? (~@ sign)     (~@ #f))
+             'ZF (~? (~@ zero)     (~@ #f))
+             'CF (~? (~@ carry)    (~@ #f)))]))
