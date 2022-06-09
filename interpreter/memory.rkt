@@ -1,14 +1,8 @@
 #lang racket
 
-(provide word-size-bits
-         word-size-bytes
-         format-word
-         word-aligned-offset
-         previous-word-aligned-address
-         next-word-aligned-address
-         align-address-to-word
-         aligned-to-word?
-         initialize-memory
+(require "utility.rkt")
+
+(provide initialize-memory
          memory-ref
          memory-depth
          at-max-depth?
@@ -19,73 +13,6 @@
          memory-map
          memory-filter
          memory-fold)
-
-;; The size of words, given in bits.
-(define word-size-bits 64)
-;; The size of words, given in bytes.
-(define word-size-bytes (/ word-size-bits 8))
-
-;; Given either an integer or a byte string, returns a string representing that
-;; value in either binary or hexadecimal.
-;;
-;;   mode:
-;;       determines how to format the value; accepted formats are
-;;           'binary OR 'bin OR 'b      - binary formatting
-;;           'hexadecimal OR 'hex OR 'h - hexadecimal formatting
-;;
-;;   word-size:
-;;       the number of bytes that correspond to one word
-(define (format-word value [mode 'binary] [word-size word-size-bytes])
-  (cond
-    [(bytes? value)
-     (unless (= (bytes-length value) word-size)
-       (raise-user-error 'format-word
-                         "given byte string contains ~a bytes; expected ~a"
-                         (bytes-length value)
-                         word-size))
-     (apply string-append
-            (map (λ (b) (format-word b mode 1))
-                 (bytes->list value)))]
-    [(integer? value)
-     (unless (> value 0)
-       (raise-user-error 'format-word
-                         "given negative integer ~a"
-                         value))
-     (unless (< value (sub1 (expt 2 (* 8 word-size))))
-       (raise-user-error 'format-word
-                         "given too-large integer ~a"
-                         value))
-     (match mode
-       [(or 'binary 'bin 'b)
-        (~r value #:base 2 #:min-width (* 8 word-size) #:pad-string "0")]
-       [(or 'hexadecimal 'hex 'h)
-        (~r value #:base 16 #:min-width word-size #:pad-string "0")])]))
-
-;; Given an address, produces the word-aligned address that is [offset-in-words]
-;; words lower than the given' address word-aligned address.
-(define (word-aligned-offset address offset-in-words)
-  (- (align-address-to-word address) (* word-size-bytes offset-in-words)))
-
-;; Given an address, produces the previous word-aligned address from the given
-;; address's word-aligned address.
-(define (previous-word-aligned-address address)
-  (word-aligned-offset address -1))
-
-;; Given an address, produces the next word-aligned address from the given
-;; address's word-aligned address.
-(define (next-word-aligned-address address)
-  (word-aligned-offset address 1))
-
-;; Given an address, produces the next lowest word-aligned address, according to
-;; the value of [word-size-bytes]. If the given address is word-aligned, it is
-;; returned unchanged.
-(define (align-address-to-word address)
-  (- address (modulo address word-size-bytes)))
-
-;; Determines whether an address is properly word-aligned, according to the
-;; value of [word-size-bytes].
-(define (aligned-to-word? address)
-  (= 0 (modulo address word-size-bytes)))
 
 (struct address-stream (hi-addr lo-addr)
   #:guard (λ (ha la _)
@@ -209,9 +136,6 @@
                     handling-strategy
                     max-depth
                     error-on-initialized-overwrite))))
-
-;; Produces an empty set of bytes.
-(define (make-empty-bytes) (bytes->immutable-bytes (make-bytes word-size-bytes 0)))
 
 ;; Retrieves the value stored at the indicated address. If no value is present
 ;; in the hash table, an empty set of bytes are returned representing what would
