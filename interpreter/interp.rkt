@@ -71,6 +71,7 @@
                         [(base) (integer->unsigned (process-argument dst))]
                         [(computed-sum new-flags) (bitwise-add base argument)]
                         [(new-ip) (next-word-aligned-address ip)])
+            ;; FIXME: Should Add allow offsets?
             (cond
               [(register? dst)
                (let ([new-registers (hash-set registers dst computed-sum)])
@@ -88,6 +89,7 @@
                         [(base) (integer->unsigned (process-argument dst))]
                         [(computed-diff new-flags) (bitwise-sub base argument)]
                         [(new-ip) (next-word-aligned-address ip)])
+            ;; FIXME: Should Sub allow offsets?
             (cond
               [(register? dst)
                (let ([new-registers (hash-set registers dst computed-diff)])
@@ -153,9 +155,37 @@
             (State (add1 tick)
                    new-ip labels registers flags memory))]
          [(And dst src)
-          (error 'step-And)]
+          ;; dst = dst & src
+          (let* ([argument (integer->unsigned (process-argument src))]
+                 [base (integer->unsigned (process-argument dst))]
+                 [computed-and (bitwise-and base argument)]
+                 [new-ip (next-word-aligned-address ip)])
+            (cond
+              [(register? dst)
+               (let ([new-registers (hash-set registers dst computed-and)])
+                 (State (add1 tick)
+                        new-ip labels new-registers flags memory))]
+              [(offset? dst)
+               (let ([address (address-from-offset dst)])
+                 (memory-set! memory address tick computed-and)
+                 (State (add1 tick)
+                        new-ip labels registers flags memory))]))]
          [(Or dst src)
-          (error 'step-Or)]
+          ;; dst = dst | src
+          (let* ([argument (integer->unsigned (process-argument src))]
+                 [base (integer->unsigned (process-argument dst))]
+                 [computed-or (bitwise-ior base argument)]
+                 [new-ip (next-word-aligned-address ip)])
+            (cond
+              [(register? dst)
+               (let ([new-registers (hash-set registers dst computed-or)])
+                 (State (add1 tick)
+                        new-ip labels new-registers flags memory))]
+              [(offset? dst)
+               (let ([address (address-from-offset dst)])
+                 (memory-set! memory address tick computed-or)
+                 (State (add1 tick)
+                        new-ip labels registers flags memory))]))]
          [(Xor dst src)
           (error 'step-Xor)]
          [(Sal dst i)
