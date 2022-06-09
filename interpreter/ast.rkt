@@ -129,6 +129,7 @@
 
 (provide (struct-out Offset))
 (struct Offset (r i) #:transparent)
+(provide offset?)
 (define offset? Offset?)
 
 (provide (struct-out Const))
