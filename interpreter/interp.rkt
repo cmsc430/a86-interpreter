@@ -47,7 +47,7 @@
                  [new-registers (hash-set registers 'rsp new-sp)])
             (memory-set! memory sp tick return-address)
             (State (add1 tick)
-                   new-ip labels registers flags memory))]
+                   new-ip labels new-registers flags memory))]
          [(Mov dst src)
           ;; dst = src
           (let ([argument (integer->unsigned (process-argument src))]
