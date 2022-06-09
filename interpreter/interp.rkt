@@ -66,6 +66,7 @@
                         new-ip labels registers flags memory))]))]
          [(Add dst src)
           ;; dst = dst + src
+          ;; % update flags according to [dst + src]
           (let*-values ([(argument) (integer->unsigned (process-argument src))]
                         [(base) (integer->unsigned (process-argument dst))]
                         [(computed-sum new-flags) (bitwise-add base argument)]
@@ -81,9 +82,30 @@
                  (State (add1 tick)
                         new-ip labels registers new-flags memory))]))]
          [(Sub dst src)
-          (error 'step-Sub)]
+          ;; dst = dst - src
+          ;; % update flags according to [dst - src]
+          (let*-values ([(argument) (integer->unsigned (process-argument src))]
+                        [(base) (integer->unsigned (process-argument dst))]
+                        [(computed-diff new-flags) (bitwise-sub base argument)]
+                        [(new-ip) (next-word-aligned-address ip)])
+            (cond
+              [(register? dst)
+               (let ([new-registers (hash-set registers dst computed-diff)])
+                 (State (add1 tick)
+                        new-ip labels new-registers new-flags memory))]
+              [(offset? dst)
+               (let ([address (address-from-offset dst)])
+                 (memory-set! memory address tick computed-diff)
+                 (State (add1 tick)
+                        new-ip labels registers new-flags memory))]))]
          [(Cmp a1 a2)
-          (error 'step-Cmp)]
+          ;; % update flags according to [a1 - a2]
+          (let*-values ([(arg1) (integer->unsigned (process-argument a1))]
+                        [(arg2) (integer->unsigned (process-argument a2))]
+                        [(_ new-flags) (bitwise-sub arg1 arg2)]
+                        [(new-ip) (next-word-aligned-address ip)])
+            (State (add1 tick)
+                   new-ip labels registers new-flags memory))]
          [(Jmp t)
           (error 'step-Jmp)]
          [(Je t)
