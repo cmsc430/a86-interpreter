@@ -107,15 +107,51 @@
             (State (add1 tick)
                    new-ip labels registers new-flags memory))]
          [(Jmp t)
-          (error 'step-Jmp)]
+          ;; ip = t
+          (let ([new-ip (if (register? t)
+                            (hash-ref registers t)
+                            (memory-ref memory t))])
+            (State (add1 tick)
+                   new-ip labels registers flags memory))]
          [(Je t)
-          (error 'step-Je)]
+          ;; if Flags[ZF], ip = t
+          (let ([new-ip (if (hash-ref flags 'ZF)
+                            (if (register? t)
+                                (hash-ref registers t)
+                                (memory-ref memory t))
+                            (next-word-aligned-address ip))])
+            (State (add1 tick)
+                   new-ip labels registers flags memory))]
          [(Jne t)
-          (error 'step-Jne)]
+          ;; if not Flags[ZF], ip = t
+          (let ([new-ip (if (not (hash-ref flags 'ZF))
+                            (if (register? t)
+                                (hash-ref registers t)
+                                (memory-ref memory t))
+                            (next-word-aligned-address ip))])
+            (State (add1 tick)
+                   new-ip labels registers flags memory))]
          [(Jl t)
-          (error 'step-Jl)]
+          ;; if Flags[SF] <> Flags[OF], ip = t
+          (let ([new-ip (if (xor (hash-ref flags 'SF)
+                                 (hash-ref flags 'OF))
+                            (if (register? t)
+                                (hash-ref registers t)
+                                (memory-ref memory t))
+                            (next-word-aligned-address ip))])
+            (State (add1 tick)
+                   new-ip labels registers flags memory))]
          [(Jg t)
-          (error 'step-Jg)]
+          ;; if not Flags[ZF] and (Flags[SF] == Flags[OF]), ip = t
+          (let ([new-ip (if (and (not (hash-ref flags 'ZF))
+                                 (= (hash-ref flags 'SF)
+                                    (hash-ref flags 'OF)))
+                            (if (register? t)
+                                (hash-ref registers t)
+                                (memory-ref memory t))
+                            (next-word-aligned-address ip))])
+            (State (add1 tick)
+                   new-ip labels registers flags memory))]
          [(And dst src)
           (error 'step-And)]
          [(Or dst src)
