@@ -187,7 +187,21 @@
                  (State (add1 tick)
                         new-ip labels registers flags memory))]))]
          [(Xor dst src)
-          (error 'step-Xor)]
+          ;; dst = dst ^ src
+          (let* ([argument (integer->unsigned (process-argument src))]
+                 [base (integer->unsigned (process-argument dst))]
+                 [computed-xor (bitwise-xor base argument)]
+                 [new-ip (next-word-aligned-address ip)])
+            (cond
+              [(register? dst)
+               (let ([new-registers (hash-set registers dst computed-xor)])
+                 (State (add1 tick)
+                        new-ip labels new-registers flags memory))]
+              [(offset? dst)
+               (let ([address (address-from-offset dst)])
+                 (memory-set! memory address tick computed-xor)
+                 (State (add1 tick)
+                        new-ip labels registers flags memory))]))]
          [(Sal dst i)
           (error 'step-Sal)]
          [(Sar dst i)
