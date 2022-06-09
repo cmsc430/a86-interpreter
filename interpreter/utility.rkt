@@ -3,8 +3,8 @@
 (require "ast.rkt"
          "registers.rkt")
 
-(provide word-size-bits
-         word-size-bytes
+(provide word-size-bytes
+         word-size-bits
          format-word
          max-signed
          min-signed
@@ -25,10 +25,10 @@
          aligned-to-word?
          address-from-offset)
 
-;; The size of words, given in bits.
-(define word-size-bits (make-parameter 64))
 ;; The size of words, given in bytes.
-(define (word-size-bytes) (/ (word-size-bits) 8))
+(define word-size-bytes (make-parameter 8))
+;; The size of words, given in bits.
+(define (word-size-bits) (* 8 (word-size-bytes)))
 
 ;; Given either an integer or a byte string, returns a string representing that
 ;; value in either binary or hexadecimal.
