@@ -244,7 +244,16 @@
             (State (add1 tick)
                    new-ip labels new-registers flags memory))]
          [(Pop a1)
-          (error 'step-Pop)]
+          ;; a1 = Mem.pop()
+          (let* ([sp (hash-ref registers 'rsp)]
+                 [value (memory-ref memory sp)]
+                 [new-sp (previous-word-aligned-address sp)]
+                 [new-registers (hash-set* registers
+                                           'rsp new-sp
+                                           a1 value)]
+                 [new-ip (next-word-aligned-address ip)])
+            (State (add1 tick)
+                   new-ip labels new-registers flags memory))]
          [(Lea dst x)
           (error 'step-Lea)]
          [instruction
