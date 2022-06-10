@@ -236,7 +236,14 @@
             (State (add1 tick)
                    new-ip labels new-registers new-flags memory))]
          [(Push a1)
-          (error 'step-Push)]
+          ;; Mem.push(a1)
+          (let* ([argument (integer->unsigned (process-argument a1))]
+                 [new-sp (next-word-aligned-address (hash-ref registers 'rsp))]
+                 [new-registers (hash-set registers 'rsp new-sp)]
+                 [new-ip (next-word-aligned-address ip)])
+            (memory-set! memory new-sp tick argument)
+            (State (add1 tick)
+                   new-ip labels new-registers flags memory))]
          [(Pop a1)
           (error 'step-Pop)]
          [(Lea dst x)
