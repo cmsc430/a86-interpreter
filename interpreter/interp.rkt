@@ -203,9 +203,38 @@
                  (State (add1 tick)
                         new-ip labels registers flags memory))]))]
          [(Sal dst i)
-          (error 'step-Sal)]
+          ;; dst = dst << i
+          ;;
+          ;; NOTE: It is assumed that [i] must be on [0, (word-size-bits) - 1].
+          (let* ([argument (integer->unsigned (process-argument dst))]
+                 [shifted (mask (arithmetic-shift argument i))]
+                 [new-registers (hash-set registers dst shifted)]
+                 [new-carry (not (= 0 (bitwise-and (arithmetic-shift (arithmetic-shift 1 (word-size-bits)) (- i))
+                                                   argument)))]
+                 [new-overflow (and (= 1 i)
+                                    (not (or (and new-carry (not (= 0 (bitwise-and (sign) shifted))))
+                                             (and (not new-carry) (= 0 (bitwise-and (sign) shifted))))))]
+                 [new-flags (make-new-flags #:overflow new-overflow #:carry new-carry)]
+                 [new-ip (next-word-aligned-address ip)])
+            (State (add1 tick)
+                   new-ip labels new-registers new-flags memory))]
          [(Sar dst i)
-          (error 'step-Sar)]
+          ;; dst = dst >> i
+          ;;
+          ;; NOTE: It is assumed that [i] must be on [0, (word-size-bits) - 1].
+          (let* ([argument (integer->unsigned (process-argument dst))]
+                 [msb? (not (= 0 (bitwise-and (sign) argument)))]
+                 [shifted (arithmetic-shift argument (- i))]
+                 [masked (if msb?
+                             (bitwise-ior shifted (make-full-mask (- i)))
+                             shifted)]
+                 [new-registers (hash-set registers dst masked)]
+                 [new-carry (not (= 0 (bitwise-and (arithmetic-shift 1 (- i 1))
+                                                   argument)))]
+                 [new-flags (make-new-flags #:carry new-carry)]
+                 [new-ip (next-word-aligned-address ip)])
+            (State (add1 tick)
+                   new-ip labels new-registers new-flags memory))]
          [(Push a1)
           (error 'step-Push)]
          [(Pop a1)
