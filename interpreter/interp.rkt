@@ -42,10 +42,9 @@
                  [new-ip (if (register? dst)
                              (hash-ref registers dst)
                              (memory-ref memory dst))]
-                 [sp (hash-ref registers 'rsp)]
-                 [new-sp (next-word-aligned-address sp)]
+                 [new-sp (next-word-aligned-address (hash-ref registers 'rsp))]
                  [new-registers (hash-set registers 'rsp new-sp)])
-            (memory-set! memory sp tick return-address)
+            (memory-set! memory new-sp tick return-address)
             (State (add1 tick)
                    new-ip labels new-registers flags memory))]
          [(Mov dst src)
