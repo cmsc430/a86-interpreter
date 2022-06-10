@@ -71,7 +71,9 @@
 ;; Defines the maximum amount of values a Cell will hold.
 (define max-cell-depth 10)
 
-;; Sets up the memory to be used during emulation. All arguments are optional.
+;; Sets up the memory to be used during emulation. All arguments except the list
+;; of instructions are optional. The instruction list must be non-empty.
+;;
 ;; Returns two values: the next free word-aligned address, and a [Memory] struct
 ;; that should be passed to all the memory-related functions.
 ;;
@@ -79,8 +81,6 @@
 ;;       A list of instructions to include in the initial (highest) memory
 ;;       addresses. Anything given in this list will be written without first
 ;;       checking if the value is a [bytes?].
-;;
-;;       default: (list)
 ;;
 ;;   max-address:
 ;;       The highest address available. This is the "first" address to be used,
@@ -106,30 +106,42 @@
 ;;                        [max-depth] writes are performed, new writes will
 ;;                        "push out" the oldest entries
 ;;
-;;       default: 'unlimited
+;;       default: [handling-strategy-unlimited]
 ;;
 ;;   max-depth:
 ;;       The maximum amount of writes to allow, depending on the
 ;;       [handling-strategy] being used.
 ;;
-;;       default: 10
-(define (initialize-memory [instructions (list)]
+;;       default: [max-cell-depth]
+;;
+;;   error-on-initialized-overwrite:
+;;       Whether to throw errors when attempting to overwrite memory that was
+;;       allocated during initialization.
+;;
+;;       default: #t
+;;
+;;       TODO: Make this actually work via address, rather than type.
+(define (initialize-memory instructions
                            [max-address #xffffffffffffffff]
                            [min-address #xffff800000000000]
                            [handling-strategy handling-strategy-unlimited]
                            [max-depth max-cell-depth]
                            [error-on-initialized-overwrite #t])
-  (let*-values
-      ([(first-address) (align-address-to-word max-address)]
-       [(next-address address-instruction-pairs)
-        (for/fold ([address first-address]
-                   [address-instruction-pairs (list)])
-                  ([instruction instructions])
-          (values (next-word-aligned-address address)
-                  (cons (cons address (vector-immutable (Cell 0 instruction)))
-                        address-instruction-pairs)))])
+  (when (empty? instructions)
+    (raise-user-error 'initialize-memory "instruction list must be non-empty"))
+  (let* ([first-address (align-address-to-word max-address)]
+         [address-instruction-pairs
+          (for/fold ([address first-address]
+                     [address-instruction-pairs (list)]
+                     #:result address-instruction-pairs)
+                    ([instruction instructions])
+            (values (next-word-aligned-address address)
+                    (cons (cons address (vector-immutable (Cell 0 instruction)))
+                          address-instruction-pairs)))]
+         [last-address (or (car (car address-instruction-pairs))
+                           first-address)])
     (values first-address
-            next-address
+            last-address
             (Memory max-address
                     min-address
                     (make-hash address-instruction-pairs)
