@@ -15,6 +15,7 @@
          integer->signed
          integer->unsigned
          mask
+         make-full-mask
          unsigned-in-bounds?
          bitwise-add
          bitwise-sub
@@ -94,6 +95,17 @@
 (define (mask n)
   (bitwise-and (integer->unsigned n)
                (sub1 (arithmetic-shift 1 (word-size-bits)))))
+
+;; Constructs a bit-mask. If [n] is non-negative, the mask is constructed
+;; starting from the least-significant bit. If [n] is negative, the mask is
+;; constructed starting from the most-significant bit.
+(define (make-full-mask n)
+  (if (>= n 0)
+      ;; Mask from the least-significant bits.
+      (sub1 (arithmetic-shift 1 n))
+      (bitwise-xor (max-unsigned)
+                   (sub1 (arithmetic-shift 1 (- (word-size-bits)
+                                                (- n)))))))
 
 ;; Determines whether masking the unsigned representation of a number loses any
 ;; information.
