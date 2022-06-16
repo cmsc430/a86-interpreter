@@ -10,6 +10,7 @@
          initialized?
          memory-set!
          unsafe-memory-set!
+         valid-address?
          memory-map
          memory-filter
          memory-fold)
@@ -226,6 +227,13 @@
                           (vector->list (hash-ref (Memory-memhash memory)
                                                   address
                                                   (vector-immutable)))))))
+
+;; Determines whether a given value can be used as an address in this Memory.
+(define (valid-address? memory address)
+  (and (real? address)
+       (>= (Memory-max-address memory)
+           address
+           (Memory-min-address memory))))
 
 ;; Maps over the values contained in memory from [hi-address] to [lo-address].
 ;; If either address is left as [#f], the corresponding default from the
