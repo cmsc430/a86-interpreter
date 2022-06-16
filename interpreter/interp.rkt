@@ -264,10 +264,7 @@
           (raise-user-error 'step "unrecognized instruction at address ~a: ~v" ip instruction)]))]))
 
 (define (interp state [steps 1000] [tracer #f])
-  (displayln (format "steps remaining: ~a" steps))
-  (displayln (format "  next instruction: ~a" (next-instruction state)))
   (when tracer
-    (displayln "  tracing...")
     (if (list? tracer)
         (map (λ (t) ((tracer-func t) t state)) tracer)
         ((tracer-func tracer) tracer state)))
@@ -279,7 +276,6 @@
     [(< (State-instruction-pointer state) (State-last-instruction state))
      (cons state 'no-more-instructions)]
     [else
-     (displayln "  recursing...")
      (interp (step state) (sub1 steps) tracer)]))
 
 (provide next-instruction)
