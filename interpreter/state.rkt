@@ -16,6 +16,14 @@
 ;;   instruction-pointer:
 ;;       The address of the next instruction to execute.
 ;;
+;;   first-instruction:
+;;       The address of the first instruction, usually the highest address in
+;;       memory.
+;;
+;;   last-instruction:
+;;       The address of the last instruction, which is used to initialize the
+;;       stack pointer register 'rsp.
+;;
 ;;   labels:
 ;;       An association list mapping label names to addresses.
 ;;
@@ -32,7 +40,15 @@
 ;; TODO: Revise implementations of recording devices for consistency? Currently,
 ;; the registers and flags are meant to be updated functionally while the
 ;; memory is stateful.
-(struct State (time-tick instruction-pointer labels registers flags memory) #:transparent)
+(struct State (time-tick
+               instruction-pointer
+               first-instruction
+               last-instruction
+               labels
+               registers
+               flags
+               memory)
+  #:transparent)
 
 ;; Given a [Program], initializes the machine state.
 (define (initialize-state program)
@@ -46,7 +62,7 @@
                            labels))
                      (list)
                      memory
-                     #f sp)]
+                     #f (next-word-aligned-address sp))]
        [(registers)
         (hash-set new-registers 'rsp sp)])
-    (State 0 ip labels registers new-flags memory)))
+    (State 0 ip ip sp labels registers new-flags memory)))
