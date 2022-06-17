@@ -257,9 +257,20 @@
                  [new-ip (next-word-aligned-address ip)])
             (State (add1 tick)
                    new-ip first-inst last-inst labels new-registers flags memory))]
-         [(Lea dst x)
-          ;; TODO: fix label handling throughout (see syntax definition 'loc'/'l')
-          (error 'step-Lea)]
+         [(Lea dst l)
+          ;; dst = Mem.lookup(l)
+          (let* ([ea (assoc l labels)]
+                 [new-ip (next-word-aligned-address ip)])
+            (cond
+              [(register? dst)
+               (let ([new-registers (hash-set registers dst ea)])
+                 (State (add1 tick)
+                        (new-ip first-inst last-inst labels new-registers flags memory)))]
+              [(offset? dst)
+               (let ([address (address-from-offset dst)])
+                 (memory-set! memory address tick ea)
+                 (State (add1 tick)
+                        new-ip first-inst last-inst labels registers flags memory))]))]
          [instruction
           (raise-user-error 'step "unrecognized instruction at address ~a: ~v" ip instruction)]))]))
 
