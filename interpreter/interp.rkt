@@ -17,6 +17,16 @@
   (match state
     [(State tick ip first-inst last-inst labels registers flags memory)
      (let ([address-from-offset (curry address-from-offset registers)])
+       (define (make-state #:with-ip [new-ip #f]
+                           #:with-registers [new-registers #f]
+                           #:with-flags [new-flags #f])
+         (State (add1 tick)
+                (or new-ip (next-word-aligned-address ip))
+                first-inst last-inst
+                labels
+                (or new-registers registers)
+                (or new-flags flags)
+                memory))
        (define (process-argument arg #:as [interpretation '()])
          (cond
            [(and (integer? arg)
@@ -52,18 +62,15 @@
        (match (memory-ref memory ip)
          [(Label _)
           ;; skip
-          (State (add1 tick)
-                 (next-word-aligned-address ip)
-                 first-inst last-inst
-                 labels registers flags memory)]
+          (make-state)]
          [(Ret)
           ;; ip = Mem.pop()
           (let* ([sp (hash-ref registers 'rsp)]
                  [new-ip (memory-ref memory sp)]
                  [new-rsp (previous-word-aligned-address sp)]
                  [new-registers (hash-set registers 'rsp new-rsp)])
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels new-registers flags memory))]
+            (make-state #:with-ip new-ip
+                        #:with-registers new-registers))]
          [(Call dst)
           ;; Mem.push(ip + wordsize)
           ;; ip = dst
@@ -74,136 +81,102 @@
                  [new-sp (next-word-aligned-address (hash-ref registers 'rsp))]
                  [new-registers (hash-set registers 'rsp new-sp)])
             (memory-set! memory new-sp tick return-address)
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels new-registers flags memory))]
+            (make-state #:with-ip new-ip
+                        #:with-registers new-registers))]
          [(Mov dst src)
           ;; dst = src
-          (let ([argument (process-argument src #:as '(register offset integer))]
-                [new-ip (next-word-aligned-address ip)])
+          (let ([argument (process-argument src #:as '(register offset integer))])
             (cond
               [(register? dst)
                ;; Write to the register.
-               (let ([new-registers (hash-set registers dst argument)])
-                 (State (add1 tick)
-                        new-ip first-inst last-inst labels new-registers flags memory))]
+               (make-state #:with-registers (hash-set registers dst argument))]
               [(offset? dst)
                ;; Write to memory.
-               (let ([address (address-from-offset dst)])
-                 (memory-set! memory address tick argument)
-                 (State (add1 tick)
-                        new-ip first-inst last-inst labels registers flags memory))]))]
+               (memory-set! memory (address-from-offset dst) tick argument)
+               (make-state)]))]
          [(Add dst src)
           ;; dst = dst + src
           ;; % update flags according to [dst + src]
           (let*-values ([(argument) (process-argument src #:as '(register offset integer))]
                         [(base) (hash-ref registers dst)]
                         [(computed-sum new-flags) (bitwise-add base argument)]
-                        [(new-ip) (next-word-aligned-address ip)]
                         [(new-registers) (hash-set registers dst computed-sum)])
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels new-registers new-flags memory))]
+            (make-state #:with-registers new-registers
+                        #:with-flags new-flags))]
          [(Sub dst src)
           ;; dst = dst - src
           ;; % update flags according to [dst - src]
           (let*-values ([(argument) (process-argument src #:as '(register offset integer))]
                         [(base) (hash-ref registers dst)]
                         [(computed-diff new-flags) (bitwise-sub base argument)]
-                        [(new-ip) (next-word-aligned-address ip)]
                         [(new-registers) (hash-set registers dst computed-diff)])
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels new-registers new-flags memory))]
+            (make-state #:with-registers new-registers
+                        #:with-flags new-flags))]
          [(Cmp a1 a2)
           ;; % update flags according to [a1 - a2]
           (let*-values ([(arg1) (process-argument a1 #:as '(register offset))]
                         [(arg2) (process-argument a2 #:as '(register offset integer))]
-                        [(_ new-flags) (bitwise-sub arg1 arg2)]
-                        [(new-ip) (next-word-aligned-address ip)])
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels registers new-flags memory))]
+                        [(_ new-flags) (bitwise-sub arg1 arg2)])
+            (make-state #:with-flags new-flags))]
          [(Jmp t)
           ;; ip = t
-          (let ([new-ip (process-argument t #:as '(register label))])
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels registers flags memory))]
+          (make-state #:with-ip (process-argument t #:as '(register label)))]
          [(Je t)
           ;; if Flags[ZF], ip = t
-          (let ([new-ip (if (hash-ref flags 'ZF)
-                            (process-argument t #:as '(register label))
-                            (next-word-aligned-address ip))])
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels registers flags memory))]
+          (make-state #:with-ip (if (hash-ref flags 'ZF)
+                                    (process-argument t #:as '(register label))
+                                    (next-word-aligned-address ip)))]
          [(Jne t)
           ;; if not Flags[ZF], ip = t
-          (let ([new-ip (if (not (hash-ref flags 'ZF))
-                            (process-argument t #:as '(register label))
-                            (next-word-aligned-address ip))])
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels registers flags memory))]
+          (make-state #:with-ip (if (not (hash-ref flags 'ZF))
+                                    (process-argument t #:as '(register label))
+                                    (next-word-aligned-address ip)))]
          [(Jl t)
           ;; if Flags[SF] <> Flags[OF], ip = t
-          (let ([new-ip (if (xor (hash-ref flags 'SF)
-                                 (hash-ref flags 'OF))
-                            (process-argument t #:as '(register label))
-                            (next-word-aligned-address ip))])
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels registers flags memory))]
+          (make-state #:with-ip (if (xor (hash-ref flags 'SF)
+                                         (hash-ref flags 'OF))
+                                    (process-argument t #:as '(register label))
+                                    (next-word-aligned-address ip)))]
          [(Jg t)
           ;; if not Flags[ZF] and (Flags[SF] == Flags[OF]), ip = t
-          (let ([new-ip (if (and (not (hash-ref flags 'ZF))
-                                 (= (hash-ref flags 'SF)
-                                    (hash-ref flags 'OF)))
-                            (process-argument t #:as '(register label))
-                            (next-word-aligned-address ip))])
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels registers flags memory))]
+          (make-state #:with-ip (if (and (not (hash-ref flags 'ZF))
+                                         (= (hash-ref flags 'SF)
+                                            (hash-ref flags 'OF)))
+                                    (process-argument t #:as '(register label))
+                                    (next-word-aligned-address ip)))]
          [(And dst src)
           ;; dst = dst & src
           (let* ([argument (process-argument src #:as '(register offset integer))]
                  [base (process-argument dst #:as '(register offset))]
-                 [computed-and (bitwise-and base argument)]
-                 [new-ip (next-word-aligned-address ip)])
+                 [computed-and (bitwise-and base argument)])
             (cond
               [(register? dst)
-               (let ([new-registers (hash-set registers dst computed-and)])
-                 (State (add1 tick)
-                        new-ip first-inst last-inst labels new-registers flags memory))]
+               (make-state #:with-registers (hash-set registers dst computed-and))]
               [(offset? dst)
-               (let ([address (address-from-offset dst)])
-                 (memory-set! memory address tick computed-and)
-                 (State (add1 tick)
-                        new-ip first-inst last-inst labels registers flags memory))]))]
+               (memory-set! memory (address-from-offset dst) tick computed-and)
+               (make-state)]))]
          [(Or dst src)
           ;; dst = dst | src
           (let* ([argument (process-argument src #:as '(register offset integer))]
                  [base (process-argument dst #:as '(register offset))]
-                 [computed-or (bitwise-ior base argument)]
-                 [new-ip (next-word-aligned-address ip)])
+                 [computed-or (bitwise-ior base argument)])
             (cond
               [(register? dst)
-               (let ([new-registers (hash-set registers dst computed-or)])
-                 (State (add1 tick)
-                        new-ip first-inst last-inst labels new-registers flags memory))]
+               (make-state #:with-registers (hash-set registers dst computed-or))]
               [(offset? dst)
-               (let ([address (address-from-offset dst)])
-                 (memory-set! memory address tick computed-or)
-                 (State (add1 tick)
-                        new-ip first-inst last-inst labels registers flags memory))]))]
+               (memory-set! memory (address-from-offset dst) tick computed-or)
+               (make-state)]))]
          [(Xor dst src)
           ;; dst = dst ^ src
           (let* ([argument (process-argument src #:as '(register offset integer))]
                  [base (process-argument dst #:as '(register offset))]
-                 [computed-xor (bitwise-xor base argument)]
-                 [new-ip (next-word-aligned-address ip)])
+                 [computed-xor (bitwise-xor base argument)])
             (cond
               [(register? dst)
-               (let ([new-registers (hash-set registers dst computed-xor)])
-                 (State (add1 tick)
-                        new-ip first-inst last-inst labels new-registers flags memory))]
+               (make-state #:with-registers (hash-set registers dst computed-xor))]
               [(offset? dst)
-               (let ([address (address-from-offset dst)])
-                 (memory-set! memory address tick computed-xor)
-                 (State (add1 tick)
-                        new-ip first-inst last-inst labels registers flags memory))]))]
+               (memory-set! memory (address-from-offset dst) tick computed-xor)
+               (make-state)]))]
          [(Sal dst i)
           ;; dst = dst << i
           ;;
@@ -216,10 +189,9 @@
                  [new-overflow (and (= 1 i)
                                     (not (or (and new-carry (not (= 0 (bitwise-and (sign) shifted))))
                                              (and (not new-carry) (= 0 (bitwise-and (sign) shifted))))))]
-                 [new-flags (make-new-flags #:overflow new-overflow #:carry new-carry)]
-                 [new-ip (next-word-aligned-address ip)])
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels new-registers new-flags memory))]
+                 [new-flags (make-new-flags #:overflow new-overflow #:carry new-carry)])
+            (make-state #:with-registers new-registers
+                        #:with-flags new-flags))]
          [(Sar dst i)
           ;; dst = dst >> i
           ;;
@@ -233,19 +205,16 @@
                  [new-registers (hash-set registers dst masked)]
                  [new-carry (not (= 0 (bitwise-and (arithmetic-shift 1 (- i 1))
                                                    base)))]
-                 [new-flags (make-new-flags #:carry new-carry)]
-                 [new-ip (next-word-aligned-address ip)])
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels new-registers new-flags memory))]
+                 [new-flags (make-new-flags #:carry new-carry)])
+            (make-state #:with-registers new-registers
+                        #:with-flags new-flags))]
          [(Push a1)
           ;; Mem.push(a1)
           (let* ([base (process-argument a1 #:as '(register integer))]
                  [new-sp (next-word-aligned-address (hash-ref registers 'rsp))]
-                 [new-registers (hash-set registers 'rsp new-sp)]
-                 [new-ip (next-word-aligned-address ip)])
+                 [new-registers (hash-set registers 'rsp new-sp)])
             (memory-set! memory new-sp tick base)
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels new-registers flags memory))]
+            (make-state #:with-registers new-registers))]
          [(Pop a1)
           ;; a1 = Mem.pop()
           (let* ([sp (hash-ref registers 'rsp)]
@@ -253,24 +222,17 @@
                  [new-sp (previous-word-aligned-address sp)]
                  [new-registers (hash-set* registers
                                            'rsp new-sp
-                                           a1 value)]
-                 [new-ip (next-word-aligned-address ip)])
-            (State (add1 tick)
-                   new-ip first-inst last-inst labels new-registers flags memory))]
+                                           a1 value)])
+            (make-state #:with-registers new-registers))]
          [(Lea dst l)
           ;; dst = Mem.lookup(l)
-          (let* ([ea (assoc l labels)]
-                 [new-ip (next-word-aligned-address ip)])
+          (let* ([ea (assoc l labels)])
             (cond
               [(register? dst)
-               (let ([new-registers (hash-set registers dst ea)])
-                 (State (add1 tick)
-                        (new-ip first-inst last-inst labels new-registers flags memory)))]
+               (make-state #:with-registers (hash-set registers dst ea))]
               [(offset? dst)
-               (let ([address (address-from-offset dst)])
-                 (memory-set! memory address tick ea)
-                 (State (add1 tick)
-                        new-ip first-inst last-inst labels registers flags memory))]))]
+               (memory-set! memory (address-from-offset dst) tick ea)
+               (make-state)]))]
          [instruction
           (raise-user-error 'step "unrecognized instruction at address ~a: ~v" ip instruction)]))]))
 
