@@ -16,49 +16,52 @@
 (define (step state)
   (match state
     [(State tick ip first-inst last-inst labels registers flags memory)
-     (let ([address-from-offset (curry address-from-offset registers)])
-       (define (make-state #:with-ip [new-ip #f]
-                           #:with-registers [new-registers #f]
-                           #:with-flags [new-flags #f])
-         (State (add1 tick)
-                (or new-ip (next-word-aligned-address ip))
-                first-inst last-inst
-                labels
-                (or new-registers registers)
-                (or new-flags flags)
-                memory))
-       (define (process-argument arg #:as [interpretation '()])
-         (cond
-           [(and (integer? arg)
-                 (or (equal? 'integer interpretation)
-                     (member 'integer interpretation)))
-            (integer->unsigned arg)]
-           [(and (register? arg)
-                 (or (equal? 'register interpretation)
-                     (member 'register interpretation)))
-            (hash-ref registers arg)]
-           [(and (offset? arg)
-                 (or (equal? 'offset interpretation)
-                     (member 'offset interpretation)))
-            (address-from-offset registers arg)]
-           [(and (valid-address? memory arg)
-                 (or (equal? 'address interpretation)
-                     (member 'address interpretation)))
-            (memory-ref memory arg)]
-           [(and (label? arg)
-                 (or (equal? 'label interpretation)
-                     (member 'label interpretation)))
-            (let ([pair (assoc arg labels)])
-              (if pair
-                  (cdr pair)
-                  (raise-user-error 'process-argument "not a valid label: ~a" arg)))]
-           [(empty? interpretation)
-            (raise-user-error 'process-argument "no interpretation given to process argument")]
-           [else
-            (raise-user-error 'process-argument
-                              "unable to process argument ~v according to interpretation(s) ~a"
-                              arg
-                              interpretation)]))
+     (let ([address-from-offset
+            (curry address-from-offset registers)]
+           [make-state
+            (λ (#:with-ip [new-ip #f]
+                #:with-registers [new-registers #f]
+                #:with-flags [new-flags #f])
+              (State (add1 tick)
+                     (or new-ip (next-word-aligned-address ip))
+                     first-inst last-inst
+                     labels
+                     (or new-registers registers)
+                     (or new-flags flags)
+                     memory))]
+           [process-argument
+            (λ (arg #:as [interpretation '()])
+              (cond
+                [(and (integer? arg)
+                      (or (equal? 'integer interpretation)
+                          (member 'integer interpretation)))
+                 (integer->unsigned arg)]
+                [(and (register? arg)
+                      (or (equal? 'register interpretation)
+                          (member 'register interpretation)))
+                 (hash-ref registers arg)]
+                [(and (offset? arg)
+                      (or (equal? 'offset interpretation)
+                          (member 'offset interpretation)))
+                 (address-from-offset registers arg)]
+                [(and (valid-address? memory arg)
+                      (or (equal? 'address interpretation)
+                          (member 'address interpretation)))
+                 (memory-ref memory arg)]
+                [(and (label? arg)
+                      (or (equal? 'label interpretation)
+                          (member 'label interpretation)))
+                 (let ([pair (assoc arg labels)])
+                   (if pair
+                       (cdr pair)
+                       (raise-user-error 'process-argument "not a valid label: ~a" arg)))]
+                [(empty? interpretation)
+                 (raise-user-error 'process-argument "no interpretation given to process argument")]
+                [else
+                 (raise-user-error 'process-argument
+                                   "unable to process argument ~v according to interpretation(s) ~a"
+                                   arg
+                                   interpretation)]))])
        (match (memory-ref memory ip)
          [(Label _)
           ;; skip
