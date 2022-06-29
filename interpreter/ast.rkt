@@ -1,6 +1,7 @@
 #lang racket
 
 (require "registers.rkt"
+         "utility.rkt"
          racket/set
          (for-syntax syntax/parse))
 
@@ -56,10 +57,9 @@
   (λ (a1 a2 n)
     (unless (register? a1)
       (error n "expects register; given ~v" a1))
-    ;; TODO: Use (word-size-bits) for range.
-    (unless (or (and (exact-integer? a2) (<= 0 a2 63))
+    (unless (or (and (exact-integer? a2) (<= 0 a2 (sub1 (word-size-bits))))
                 (eq? 'cl a2))
-      (error n "expects exact integer in [0,63]; given ~v" a2))
+      (error n "expects exact integer in [0,~a]; given ~v" (sub1 (word-size-bits)) a2))
     (values a1 a2)))
 
 (define check:offset
