@@ -132,6 +132,10 @@
 (struct Offset (r i) #:transparent)
 (provide offset?)
 (define offset? Offset?)
+(provide address-from-offset)
+;; Calculates an offset address.
+(define (address-from-offset registers offset)
+  (+ (Offset-i offset) (hash-ref registers (Offset-r offset))))
 
 (provide (struct-out Const))
 (struct Const (x) #:transparent)

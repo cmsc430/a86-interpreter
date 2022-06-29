@@ -1,7 +1,6 @@
 #lang racket
 
-(require "ast.rkt"
-         "registers.rkt")
+(require "registers.rkt")
 
 (provide word-size-bytes
          word-size-bits
@@ -23,8 +22,7 @@
          previous-word-aligned-address
          next-word-aligned-address
          align-address-to-word
-         aligned-to-word?
-         address-from-offset)
+         aligned-to-word?)
 
 ;; The size of words, given in bytes.
 (define word-size-bytes (make-parameter 8))
@@ -196,7 +194,3 @@
 ;; value of [word-size-bytes].
 (define (aligned-to-word? address)
   (= 0 (modulo address (word-size-bytes))))
-
-;; Calculates an offset address.
-(define (address-from-offset registers offset)
-  (+ (Offset-i offset) (hash-ref registers (Offset-r offset))))
