@@ -15,7 +15,7 @@
 ;; Given a machine state, takes the next step according to the a86 semantics.
 (define (step state)
   (match state
-    [(State tick ip first-inst last-inst labels registers flags memory)
+    [(State tick ip first-inst last-inst labels registers flags memory runtime)
      (let ([address-from-offset
             (curry address-from-offset registers)]
            [make-state
@@ -28,7 +28,8 @@
                      labels
                      (or new-registers registers)
                      (or new-flags flags)
-                     memory))]
+                     memory
+                     runtime))]
            [process-argument
             (λ (arg #:as [interpretation '()])
               (cond
@@ -63,6 +64,11 @@
                                    arg
                                    interpretation)]))])
        (match (memory-ref memory ip)
+         [(Extern l)
+          ;; ensure external function exists in runtime, then skip
+          (unless (hash-has-key? runtime l)
+            (raise-user-error 'step "reference to undefined external function ~a" l))
+          (make-state)]
          [(Label _)
           ;; skip
           (make-state)]
