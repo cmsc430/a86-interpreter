@@ -36,6 +36,9 @@
 ;;   memory:
 ;;       A [Memory] object from ["memory.rkt"], representing the current stack.
 ;;
+;;   runtime:
+;;       A hash mapping external function names to implementations.
+;;
 ;; TODO: Remove transparency?
 ;; TODO: Revise implementations of recording devices for consistency? Currently,
 ;; the registers and flags are meant to be updated functionally while the
@@ -47,11 +50,14 @@
                labels
                registers
                flags
-               memory)
+               memory
+               runtime)
   #:transparent)
 
 ;; Given a [Program], initializes the machine state.
-(define (initialize-state program)
+(define (initialize-state program [runtime #f])
+  (unless runtime
+    (set! runtime (hash)))
   (let*-values
       ([(ip sp memory)
         (initialize-memory (Program-instructions program))]
@@ -65,4 +71,4 @@
                      #f (next-word-aligned-address sp))]
        [(registers)
         (hash-set new-registers 'rsp sp)])
-    (State 0 ip ip sp labels registers new-flags memory)))
+    (State 0 ip ip sp labels registers new-flags memory runtime)))
