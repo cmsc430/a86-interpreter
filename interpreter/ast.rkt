@@ -151,24 +151,33 @@
 ;; TODO: It would be neat to define, say, [#lang a86] where the program can just
 ;; be directly written, and then the underlying implementation of the #lang
 ;; converts it into a [Program]. Don't know how practical or useful that is.
+(define (instruction-list-is-valid? instructions)
+  (match instructions
+    [(list) #f]
+    [(cons (Label _) _) #t]
+    [(cons (Extern _) instructions)
+     (instruction-list-is-valid? instructions)]))
 (provide (struct-out Program))
 (struct Program (instructions)
   #:transparent
   #:guard (λ (instructions n)
             (unless (list? instructions)
-              (error n "instructions must be given as a list"))
+              (raise-user-error n "instructions must be given as a list"))
             (unless (not (empty? instructions))
-              (error n "must be given at least one instruction"))
-            (unless (Label? (first instructions))
-              (error n "first instruction must be a label; given ~v" (first instructions)))
+              (raise-user-error n "must be given at least one instruction"))
+            (unless (instruction-list-is-valid? instructions)
+              (raise-user-error
+               n
+               "instruction list must begin with zero or more Extern instructions followed by a Label instruction; given ~v"
+               (first instructions)))
             (for/fold ([labels (set)])
                       ([instruction instructions])
               (unless (Instruction? instruction)
-                (error n "all instructions must be valid; given ~v" instruction))
+                (raise-user-error n "all instructions must be valid; given ~v" instruction))
               (if (Label? instruction)
                   (begin
                     (when (set-member? labels (Label-x instruction))
-                      (error n "labels cannot be repeated; given ~v" (Label-x instruction)))
+                      (raise-user-error n "labels cannot be repeated; given ~v" (Label-x instruction)))
                     (set-add labels (Label-x instruction)))
                   labels))
             instructions))
