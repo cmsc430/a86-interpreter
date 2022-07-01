@@ -95,5 +95,6 @@
        [(registers)
         (hash-set new-registers 'rsp sp)]
        [(runtime)
-        (hash-map runtime convert-external-function)])
+        (for/hash ([(key func) (in-hash runtime)])
+          (values key (convert-external-function func)))])
     (State 0 ip ip sp labels registers new-flags memory runtime)))
