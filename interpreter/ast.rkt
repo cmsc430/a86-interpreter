@@ -174,10 +174,11 @@
                       ([instruction instructions])
               (unless (Instruction? instruction)
                 (raise-user-error n "all instructions must be valid; given ~v" instruction))
-              (if (Label? instruction)
-                  (begin
-                    (when (set-member? labels (Label-x instruction))
-                      (raise-user-error n "labels cannot be repeated; given ~v" (Label-x instruction)))
-                    (set-add labels (Label-x instruction)))
-                  labels))
+              (match instruction
+                [(or (? Label? (app Label-x l))
+                     (? Extern? (app Extern-x l)))
+                 (when (set-member? labels l)
+                   (raise-user-error n "labels cannot be repeated; given ~v" l))
+                 (set-add labels l)]
+                [_ labels]))
             instructions))
