@@ -82,7 +82,6 @@
                         #:with-registers new-registers))]
          [(Call (? (curry hash-has-key? runtime) external-function))
           ;; call the external function
-          (displayln (format "registers (outside): ~v" registers))
           (let* ([func (hash-ref runtime external-function)]
                  [result (func registers memory 0)] ; FIXME: stack pointer
                  [new-registers (hash-set registers 'rax result)])
