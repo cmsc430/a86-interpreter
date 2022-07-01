@@ -80,6 +80,10 @@
                  [new-registers (hash-set registers 'rsp new-rsp)])
             (make-state #:with-ip new-ip
                         #:with-registers new-registers))]
+         [(Call (? (curry hash-has-key? runtime) external-function))
+          ;; call the external function
+          ;; TODO: implement this!
+          (error 'step "calls of external functions not yet implemented")]
          [(Call dst)
           ;; Mem.push(ip + wordsize)
           ;; ip = dst
