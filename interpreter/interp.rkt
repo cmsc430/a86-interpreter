@@ -82,8 +82,11 @@
                         #:with-registers new-registers))]
          [(Call (? (curry hash-has-key? runtime) external-function))
           ;; call the external function
-          ;; TODO: implement this!
-          (error 'step "calls of external functions not yet implemented")]
+          (displayln (format "registers (outside): ~v" registers))
+          (let* ([func (hash-ref runtime external-function)]
+                 [result (func registers memory 0)] ; FIXME: stack pointer
+                 [new-registers (hash-set registers 'rax result)])
+            (make-state #:with-registers new-registers))]
          [(Call dst)
           ;; Mem.push(ip + wordsize)
           ;; ip = dst
