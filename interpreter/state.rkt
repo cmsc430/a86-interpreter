@@ -54,10 +54,33 @@
                runtime)
   #:transparent)
 
+;; Converts an external (native Racket) function into one that accepts arguments
+;; from the registers and stack. This obeys typical x86 calling conventions,
+;; namely: the six registers 'rdi 'rsi 'rdx 'rcx 'r8 and 'r9 are used in that
+;; order for passing the first six arguments to the function, and additional
+;; arguments are passed in reverse order on the stack.
+(define (convert-external-function func)
+  (let* ([register-order '(rdi rsi rdx rcx r8 r9)]
+         [regc (length register-order)]
+         [argc (procedure-arity func)])
+    (cond
+      [(integer? argc)
+       (λ (registers memory sp)
+         (let ([args (for/list ([argn (range argc)])
+                       (if (< argn regc)
+                           ;; Take the argument from the appropriate register.
+                           (hash-ref registers (list-ref register-order argn))
+                           ;; Take the argument from the stack.
+                           ;; TODO: implement this!
+                           (error 'initialize-state "external functions needing more than 6 arguments are not yet implemented")))])
+           (apply func args)))]
+      [(list? argc)
+       (raise-user-error
+        'initialize-state
+        "a86 currently does not support runtime functions with optional arguments; please wrap your function")])))
+
 ;; Given a [Program], initializes the machine state.
-(define (initialize-state program [runtime #f])
-  (unless runtime
-    (set! runtime (hash)))
+(define (initialize-state program [runtime (hash)])
   (let*-values
       ([(ip sp memory)
         (initialize-memory (Program-instructions program))]
@@ -70,5 +93,7 @@
                      memory
                      #f (next-word-aligned-address sp))]
        [(registers)
-        (hash-set new-registers 'rsp sp)])
+        (hash-set new-registers 'rsp sp)]
+       [(runtime)
+        (hash-map runtime convert-external-function)])
     (State 0 ip ip sp labels registers new-flags memory runtime)))
