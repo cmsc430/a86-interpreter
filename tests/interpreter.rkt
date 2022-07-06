@@ -37,3 +37,55 @@
                  (Sar 'rax 1)
                  (Jmp 'compare)
                  (Label 'finish))))
+
+;; Runtimes.
+(define (test-external-func1)
+  (let* ([prog (Program (list (Extern 'extern)
+                              (Label 'entry)
+                              (Mov 'rax 42)))]
+         [runtime (hash 'extern (λ (x) (+ x 2)))]
+         [state (initialize-state prog runtime)])
+    (interp state 0)))
+
+(define (test-external-func2)
+  (let* ([prog (Program (list (Extern 'extern)
+                              (Label 'entry)
+                              (Mov 'rdi 42)
+                              (Call 'extern)))]
+         [runtime (hash 'extern (λ (x) (+ x 2)))]
+         [state (initialize-state prog runtime)])
+    (interp state 4)))
+
+(define (test-external-func3)
+  (let* ([prog (Program (list (Extern 'extern)
+                              (Label 'entry)
+                              (Mov 'rdi 1)
+                              (Mov 'rsi 2)
+                              (Mov 'rdx 3)
+                              (Mov 'rcx 4)
+                              (Mov 'r8 5)
+                              (Mov 'r9 6)
+                              (Push 7)
+                              (Push 8)
+                              (Call 'extern)))]
+         [runtime (hash 'extern (λ (a1 a2 a3 a4 a5 a6 a7 a8)
+                                  (+ a1 a2 a3 a4 a5 a6 a7 a8)))]
+         [state (initialize-state prog runtime)])
+    (interp state -1)))
+
+(define (test-read-byte)
+  (let* ([prog (Program (list (Extern 'read-byte)
+                              (Label 'entry)
+                              (Call 'read-byte)))]
+         [runtime (hash 'read-byte (λ () (read-byte)))]
+         [state (initialize-state prog runtime)])
+    (interp state -1)))
+
+(define (test-write-byte)
+  (let* ([prog (Program (list (Extern 'write-byte)
+                              (Label 'entry)
+                              (Mov 'rdi 97)
+                              (Call 'write-byte)))]
+         [runtime (hash 'write-byte (λ (b) (write-byte b)))]
+         [state (initialize-state prog runtime)])
+    (interp state -1)))
