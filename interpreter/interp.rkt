@@ -85,6 +85,16 @@
           (let* ([func (hash-ref runtime external-function)]
                  [sp (hash-ref registers 'rsp)]
                  [result (func registers memory sp)]
+                 [_ (unless (integer? result)
+                      (raise-user-error 'step
+                                        "result of external function '~a' not an integer; got ~v"
+                                        external-function
+                                        result))]
+                 [_ (unless (<= (integer-length result) (word-size-bits))
+                      (raise-user-error 'step
+                                        "integer result of external function '~a' too large; got ~v"
+                                        external-function
+                                        result))]
                  [new-registers (hash-set registers 'rax result)])
             (make-state #:with-registers new-registers))]
          [(Call dst)
