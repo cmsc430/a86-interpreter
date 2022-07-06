@@ -83,7 +83,8 @@
          [(Call (? (curry hash-has-key? runtime) external-function))
           ;; call the external function
           (let* ([func (hash-ref runtime external-function)]
-                 [result (func registers memory 0)] ; FIXME: stack pointer
+                 [sp (hash-ref registers 'rsp)]
+                 [result (func registers memory sp)]
                  [new-registers (hash-set registers 'rax result)])
             (make-state #:with-registers new-registers))]
          [(Call dst)

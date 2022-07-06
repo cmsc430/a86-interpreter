@@ -42,6 +42,9 @@
 ;;   min-address:
 ;;       The lowest address available.
 ;;
+;;   last-instruction-address:
+;;       The address of the last instruction pre-loaded into memory.
+;;
 ;;   memhash:
 ;;       A mutable hashmap from addresses to immutable vectors of Cells.
 ;;
@@ -53,11 +56,12 @@
 ;;
 ;;   error-on-overwrite:
 ;;       Whether to prevent attempts by [memory-set!] to overwrite addresses
-;;       that currently hold non-byte-string values.
+;;       that were specially initialized.
 ;;
 ;; TODO: Remove transparency?
 (struct Memory (max-address
                 min-address
+                last-instruction-address
                 memhash
                 handling
                 max-depth
@@ -75,24 +79,25 @@
 ;; Sets up the memory to be used during emulation. All arguments except the list
 ;; of instructions are optional. The instruction list must be non-empty.
 ;;
-;; Returns two values: the next free word-aligned address, and a [Memory] struct
-;; that should be passed to all the memory-related functions.
+;; Returns three values: the first word-aligned address, the word-aligned
+;; address of the last instruction, and a [Memory] struct that should be passed
+;; to all the memory-related functions.
 ;;
 ;;   instructions:
 ;;       A list of instructions to include in the initial (highest) memory
 ;;       addresses. Anything given in this list will be written without first
-;;       checking if the value is a [bytes?].
+;;       checking if the value is an [integer?].
 ;;
 ;;   max-address:
 ;;       The highest address available. This is the "first" address to be used,
 ;;       rounded down to the nearest word boundary.
 ;;
-;;       default: #xffffffffffffffff
+;;       default: [#xffffffffffffffff]
 ;;
 ;;   min-address:
 ;;       The lowest address available. Memory cannot be written beyond this.
 ;;
-;;       default: #xffff800000000000
+;;       default: [#xffff800000000000]
 ;;
 ;;   handling-strategy:
 ;;       Memory can be set up to only allow a specific number of writes to a
@@ -119,9 +124,7 @@
 ;;       Whether to throw errors when attempting to overwrite memory that was
 ;;       allocated during initialization.
 ;;
-;;       default: #t
-;;
-;;       TODO: Make this actually work via address, rather than type.
+;;       default: [#t]
 (define (initialize-memory instructions
                            [max-address #xffffffffffffffff]
                            [min-address #xffff800000000000]
@@ -145,15 +148,17 @@
             last-address
             (Memory max-address
                     min-address
+                    last-address
                     (make-hash address-instruction-pairs)
                     handling-strategy
                     max-depth
                     error-on-initialized-overwrite))))
 
 ;; Retrieves the value stored at the indicated address. If no value is present
-;; in the hash table, an empty set of bytes are returned representing what would
-;; be expected if our memory was not being emulated.
-(define (memory-ref memory address [failure-result make-empty-bytes])
+;; in the hash table, the result of [(failure-result)] is returned, representing
+;; what would be expected if our memory was not being emulated. By default, the
+;; [failure-result] function produces [0].
+(define (memory-ref memory address [failure-result (λ () 0)])
   (let ([result (hash-ref (Memory-memhash memory)
                           address
                           #f)])
@@ -177,14 +182,17 @@
          (>= (memory-depth memory address)
              (Memory-max-depth memory)))))
 
-;; Determines whether the indicated address holds a special (non-byte-string)
-;; value. Since instructions are written into memory during memory
-;; initialization, this is a way to check if the address is holding an
-;; instruction.
+;; Determines whether the indicated address holds a special initialized value.
+;; Since instructions are written into memory during memory initialization, this
+;; is a way to check if the address is holding an instruction.
+;;
+;; TODO: Rename.
 (define (specialized-initial-value? memory address)
-  (not (bytes? (memory-ref memory address))))
+  (>= address (Memory-last-instruction-address memory)))
 
 ;; Determines whether the indicated address actually holds a value.
+;;
+;; TODO: Rename for clarity.
 (define (initialized? memory address)
   (or (memory-ref memory address #f)
       #t))
@@ -194,9 +202,11 @@
 (define (memory-set! memory address tick value)
   (cond
     [(not (Memory? memory))
-     (raise-user-error 'memory-set "expected initialized memory; got ~v" memory)]
-    [(not (bytes? value))
-     (raise-user-error 'memory-set! "values to be stored in memory must be bytes")]
+     (raise-user-error 'memory-set! "expected initialized memory; got ~v" memory)]
+    [(not (integer? value))
+     (raise-user-error 'memory-set! "values to be stored in memory must be integers")]
+    [(not (= 0 (arithmetic-shift value (- (word-size-bits)))))
+     (raise-user-error 'memory-set! "values to be stored in memory must be no larger than ~a bits" (word-size-bits))]
     [(> address (Memory-max-address memory))
      (raise-user-error 'memory-set! "expected address less than ~a; got ~a" (Memory-max-address memory) address)]
     [(< address (Memory-min-address memory))
@@ -240,9 +250,8 @@
 ;; [memory] is used.
 ;;
 ;; NOTE: The [proc] procedure should be a two-argument function that takes in an
-;; address and a corresponding memory value. Most values will be byte strings,
-;; but be careful if your address range includes any specially initialized
-;; memory.
+;; address and a corresponding memory value. Most values will be integers, but
+;; be careful if your address range includes any specially initialized memory.
 (define (memory-map proc memory [hi-address #f] [lo-address #f])
   (unless hi-address
     (set! hi-address (Memory-max-address memory)))
@@ -261,8 +270,8 @@
 ;;
 ;; NOTE: The [pred] predicate should be a two-argument function that takes in an
 ;; address and a corresponding memory value and returns a Boolean. Most values
-;; will be byte strings, but be careful if your address range includes any
-;; specially initialized memory.
+;; will be integers, but be careful if your address range includes any specially
+;; initialized memory.
 (define (memory-filter pred memory [hi-address #f] [lo-address #f])
   (unless hi-address
     (set! hi-address (Memory-max-address memory)))

@@ -60,24 +60,31 @@
 ;; order for passing the first six arguments to the function, and additional
 ;; arguments are passed in reverse order on the stack.
 (define (convert-external-function func)
-  (let* ([register-order '(rdi rsi rdx rcx r8 r9)]
-         [regc (length register-order)]
-         [argc (procedure-arity func)])
-    (cond
-      [(integer? argc)
-       (λ (registers memory sp)
-         (let ([args (for/list ([argn (range argc)])
-                       (if (< argn regc)
-                           ;; Take the argument from the appropriate register.
-                           (hash-ref registers (list-ref register-order argn))
-                           ;; Take the argument from the stack.
-                           ;; TODO: implement this!
-                           (error 'initialize-state "external functions needing more than 6 arguments are not yet implemented")))])
-           (apply func args)))]
-      [(list? argc)
-       (raise-user-error
-        'initialize-state
-        "a86 currently does not support runtime functions with optional arguments; please wrap your function")])))
+  (match (procedure-arity func)
+    [0 (λ (rs m sp) (func))]
+    [1 (λ (rs m sp) (func (hash-ref rs 'rdi)))]
+    [2 (λ (rs m sp) (func (hash-ref rs 'rdi) (hash-ref rs 'rsi)))]
+    [3 (λ (rs m sp) (func (hash-ref rs 'rdi) (hash-ref rs 'rsi) (hash-ref rs 'rdx)))]
+    [4 (λ (rs m sp) (func (hash-ref rs 'rdi) (hash-ref rs 'rsi) (hash-ref rs 'rdx) (hash-ref rs 'rcx)))]
+    [5 (λ (rs m sp) (func (hash-ref rs 'rdi) (hash-ref rs 'rsi) (hash-ref rs 'rdx) (hash-ref rs 'rcx) (hash-ref rs 'r8)))]
+    [6 (λ (rs m sp) (func (hash-ref rs 'rdi) (hash-ref rs 'rsi) (hash-ref rs 'rdx) (hash-ref rs 'rcx) (hash-ref rs 'r8) (hash-ref rs 'r9)))]
+    [(? integer? argc)
+     (λ (rs m sp)
+       (let ([reg-args (list (hash-ref rs 'rdi) (hash-ref rs 'rsi)
+                             (hash-ref rs 'rdx) (hash-ref rs 'rcx)
+                             (hash-ref rs 'r8) (hash-ref rs 'r9))]
+             [mem-args (for/fold ([result (list)]
+                                  [sp sp]
+                                  #:result (reverse result))
+                                 ([_ (range (- argc 6))])
+                         ;; Read value from memory and increment stack pointer.
+                         (values (cons (memory-ref m sp) result)
+                                 (previous-word-aligned-address sp)))])
+         (apply func (append reg-args mem-args))))]
+    [(? list?)
+     (raise-user-error
+      'initialize-state
+      "a86 currently does not support runtime functions with optional arguments; please wrap your function")]))
 
 ;; Given a [Program], initializes the machine state.
 (define (initialize-state program [runtime (hash)])
