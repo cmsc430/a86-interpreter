@@ -15,21 +15,18 @@
 ;; Given a machine state, takes the next step according to the a86 semantics.
 (define (step state)
   (match state
-    [(State tick ip first-inst last-inst labels registers flags memory runtime)
-     (let ([address-from-offset
-            (curry address-from-offset registers)]
+    [(State first-inst last-inst runtime labels tick ip flags registers memory)
+     (let ([address-from-offset (curry address-from-offset registers)]
            [make-state
             (λ (#:with-ip [new-ip #f]
                 #:with-registers [new-registers #f]
                 #:with-flags [new-flags #f])
-              (State (add1 tick)
+              (State first-inst last-inst runtime labels
+                     (add1 tick)
                      (or new-ip (next-word-aligned-address ip))
-                     first-inst last-inst
-                     labels
-                     (or new-registers registers)
                      (or new-flags flags)
-                     memory
-                     runtime))]
+                     (or new-registers registers)
+                     memory))]
            [process-argument
             (λ (arg #:as [interpretation '()])
               (cond

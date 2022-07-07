@@ -10,48 +10,48 @@
 
 ;; A representation of the current state of the machine. The state includes:
 ;;
+;;   first-instruction:
+;;       The address of the first instruction, usually the highest address in
+;;       memory. Immutable.
+;;
+;;   last-instruction:
+;;       The address of the last instruction, which is used to initialize the
+;;       stack pointer register 'rsp. Immutable.
+;;
+;;   runtime:
+;;       A hash mapping external function names to implementations. Immutable.
+;;
+;;   labels:
+;;       An association list mapping label names to addresses. Immutable.
+;;
 ;;   time-tick:
 ;;       An integer representing how many instructions have been evaluated.
 ;;
 ;;   instruction-pointer:
 ;;       The address of the next instruction to execute.
 ;;
-;;   first-instruction:
-;;       The address of the first instruction, usually the highest address in
-;;       memory.
-;;
-;;   last-instruction:
-;;       The address of the last instruction, which is used to initialize the
-;;       stack pointer register 'rsp.
-;;
-;;   labels:
-;;       An association list mapping label names to addresses.
+;;   flags:
+;;       A hash mapping flag names to their values.
 ;;
 ;;   registers:
 ;;       A hash mapping register names to their values.
 ;;
-;;   flags:
-;;       A hash mapping flag names to their values.
-;;
 ;;   memory:
 ;;       A [Memory] object from ["memory.rkt"], representing the current stack.
-;;
-;;   runtime:
-;;       A hash mapping external function names to implementations.
 ;;
 ;; TODO: Remove transparency?
 ;; TODO: Revise implementations of recording devices for consistency? Currently,
 ;; the registers and flags are meant to be updated functionally while the
 ;; memory is stateful.
-(struct State (time-tick
-               instruction-pointer
-               first-instruction
+(struct State (first-instruction
                last-instruction
+               runtime
                labels
-               registers
+               time-tick
+               instruction-pointer
                flags
-               memory
-               runtime)
+               registers
+               memory)
   #:transparent)
 
 ;; Converts an external (native Racket) function into one that accepts arguments
@@ -104,4 +104,4 @@
        [(runtime)
         (for/hash ([(key func) (in-hash runtime)])
           (values key (convert-external-function func)))])
-    (State 0 ip ip sp labels registers new-flags memory runtime)))
+    (State ip sp runtime labels 0 ip new-flags registers memory)))
