@@ -5,7 +5,6 @@
          racket/set
          (for-syntax syntax/parse))
 
-
 (define check:label-symbol
   (λ (x n)
     (when (register? x)
@@ -81,6 +80,9 @@
     (unless (or (register? dst) (offset? dst))
       (error n "expects register or offset; given ~v" dst))
     ;; TODO: Implement this part.
+    ;; TODO: Do we need this part? The [exp?] predicate has to do with the
+    ;; [Plus] struct in the original a86, but I can't figure what [Plus] is
+    ;; actually for.
     #;(unless (or (label? x) (offset? x) (exp? x))
       (error n "expects label, offset, or expression; given ~v" x))
     (values dst x)))
@@ -129,9 +131,9 @@
   (Pop    (a1)      check:register)
   (Lea    (dst x)   check:lea))
 
-(provide (struct-out Offset))
 (struct Offset (r i) #:transparent)
-(provide offset?)
+(provide offset offset?)
+(define (offset r [i 0]) (Offset r i))
 (define offset? Offset?)
 (provide address-from-offset)
 ;; Calculates an offset address.
@@ -153,10 +155,10 @@
 ;; converts it into a [Program]. Don't know how practical or useful that is.
 (define (instruction-list-is-valid? instructions)
   (match instructions
-    [(list) #f]
     [(cons (Label _) _) #t]
     [(cons (Extern _) instructions)
-     (instruction-list-is-valid? instructions)]))
+     (instruction-list-is-valid? instructions)]
+    [_ #f]))
 (provide (struct-out Program))
 (struct Program (instructions)
   #:transparent
@@ -172,7 +174,7 @@
                (first instructions)))
             (for/fold ([labels (set)])
                       ([instruction instructions])
-              (unless (Instruction? instruction)
+              (unless (instruction? instruction)
                 (raise-user-error n "all instructions must be valid; given ~v" instruction))
               (match instruction
                 [(or (? Label? (app Label-x l))
