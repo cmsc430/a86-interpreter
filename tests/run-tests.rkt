@@ -8,4 +8,5 @@
 (run-tests instruction-creation-tests)
 (run-tests program-creation-tests)
 (run-tests simple-execution-tests)
-(run-tests flag-setting-tests)
+(run-tests addition-flag-setting-tests)
+(run-tests subtraction-flag-setting-tests)

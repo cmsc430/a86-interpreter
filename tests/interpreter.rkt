@@ -201,7 +201,7 @@
                  (op 'rax rhs))))
 
 (define/provide-test-suite
-  flag-setting-tests
+  addition-flag-setting-tests
   (test-program "add two small numbers to positive sum"
                 (make-flag-test-program Add 1 1)
                 #:with-flags (make-new-flags)
@@ -250,3 +250,38 @@
                 (make-flag-test-program Add (min-signed) (min-signed))
                 #:with-flags (make-new-flags #:overflow #t #:zero #t #:carry #t)
                 #:with-registers (hash 'rax 0)))
+
+(define/provide-test-suite
+  subtraction-flag-setting-tests
+  (test-program "subtract two small numbers to positive difference"
+                (make-flag-test-program Sub 2 1)
+                #:with-flags (make-new-flags)
+                #:with-registers (hash 'rax 1))
+  (test-program "subtract greatest signed value from least signed value"
+                (make-flag-test-program Sub (min-signed) (max-signed))
+                #:with-flags (make-new-flags #:overflow #t)
+                #:with-registers (hash 'rax 1))
+  (test-program "subtract 1 from least signed value"
+                (make-flag-test-program Sub (min-signed) 1)
+                #:with-flags (make-new-flags #:overflow #t)
+                #:with-registers (hash 'rax (make-full-mask (sub1 (word-size-bits)))))
+  (test-program "subtract two zeroes"
+                (make-flag-test-program Sub 0 0)
+                #:with-flags (make-new-flags #:zero #t)
+                #:with-registers (hash 'rax 0))
+  (test-program "subtract greatest unsigned value from least unsigned value"
+                (make-flag-test-program Sub (min-unsigned) (max-unsigned))
+                #:with-flags (make-new-flags #:carry #t)
+                #:with-registers (hash 'rax 1))
+  (test-program "subtract 1 from 0"
+                (make-flag-test-program Sub 0 1)
+                #:with-flags (make-new-flags #:overflow #t #:sign #t)
+                #:with-registers (hash 'rax (max-unsigned)))
+  (test-program "subtract two small numbers to negative difference"
+                (make-flag-test-program Sub 1 2)
+                #:with-flags (make-new-flags #:sign #t #:carry #t)
+                #:with-registers (hash 'rax -1))
+  (test-program "subtract least signed value from greatest signed value"
+                (make-flag-test-program Sub (max-signed) (min-signed))
+                #:with-flags (make-new-flags #:overflow #t #:sign #t #:carry #t)
+                #:with-registers (hash 'rax (max-unsigned))))
