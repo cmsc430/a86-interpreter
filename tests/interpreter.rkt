@@ -275,7 +275,7 @@
                 #:with-registers (hash 'rax 1))
   (test-program "subtract 1 from 0"
                 (make-flag-test-program Sub 0 1)
-                #:with-flags (make-new-flags #:overflow #t #:sign #t)
+                #:with-flags (make-new-flags #:sign #t #:carry #t)
                 #:with-registers (hash 'rax (max-unsigned)))
   (test-program "subtract two small numbers to negative difference"
                 (make-flag-test-program Sub 1 2)
