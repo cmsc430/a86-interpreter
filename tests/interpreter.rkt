@@ -1,8 +1,8 @@
 #lang racket/base
 
 (require "utility.rkt"
-         "../interpreter/registers.rkt"
-         "../interpreter/utility.rkt"
+         "../a86/interpreter/registers.rkt"
+         "../a86/interpreter/utility.rkt"
          rackunit)
 
 (define all-register-names (cons 'eax register-names))

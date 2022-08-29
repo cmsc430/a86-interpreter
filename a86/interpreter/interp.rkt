@@ -1,6 +1,6 @@
 #lang racket
 
-(require "ast.rkt"
+(require "../ast.rkt"
          "memory.rkt"
          "registers.rkt"
          "state.rkt"
@@ -9,7 +9,7 @@
 (provide step
          interp
          initialize-state
-         (all-from-out "ast.rkt"
+         (all-from-out "../ast.rkt"
                        "utility.rkt"))
 
 ;; Given a machine state, takes the next step according to the a86 semantics.
