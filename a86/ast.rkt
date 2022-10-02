@@ -155,6 +155,19 @@
   (and (symbol? l)
        (not (register? l))))
 
+(provide label-type?)
+(define (label-type? instruction)
+  (or (Label? instruction)
+      (Global? instruction)
+      (Extern? instruction)))
+
+(provide get-label)
+(define (get-label instruction)
+  (match instruction
+    [(Label x) x]
+    [(Global x) x]
+    [(Extern x) x]))
+
 ;; A Program is a list of instructions.
 ;;
 ;; TODO: It would be neat to define, say, [#lang a86] where the program can just
@@ -163,6 +176,7 @@
 (define (instruction-list-is-valid? instructions)
   (match instructions
     [(cons (Label _) _) #t]
+    [(cons (Global _) _) #t]
     [(cons (Extern _) instructions)
      (instruction-list-is-valid? instructions)]
     [_ #f]))
@@ -177,7 +191,7 @@
             (unless (instruction-list-is-valid? instructions)
               (raise-user-error
                n
-               "instruction list must begin with zero or more Extern instructions followed by a Label instruction; given ~v"
+               "instruction list must begin with zero or more Extern instructions followed by a Label or Global instruction; given ~v"
                (first instructions)))
             (for/fold ([labels (set)])
                       ([instruction instructions])
