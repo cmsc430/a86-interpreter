@@ -22,7 +22,8 @@
          previous-word-aligned-address
          next-word-aligned-address
          align-address-to-word
-         aligned-to-word?)
+         aligned-to-word?
+         sequence)
 
 ;; The size of words, given in bytes.
 (define word-size-bytes (make-parameter 8))
@@ -194,3 +195,12 @@
 ;; value of [word-size-bytes].
 (define (aligned-to-word? address)
   (= 0 (modulo address (word-size-bytes))))
+
+;; Combine lists and individual elements willy-nilly.
+(define (sequence . xs)
+  (foldr (λ (x xs)
+           (if (list? x)
+               (append x xs)
+               (cons x xs)))
+         '()
+         xs))

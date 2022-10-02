@@ -87,14 +87,21 @@
       "a86 currently does not support runtime functions with optional arguments; please wrap your function")]))
 
 ;; Given a [Program], initializes the machine state.
-(define (initialize-state program [runtime (hash)])
+(define (initialize-state program
+                          #:entry-point [entry-point 'entry]
+                          #:runtime [runtime (hash)])
   (let*-values
       ([(ip sp memory)
-        (initialize-memory (Program-instructions program))]
+        (initialize-memory (let ([main (gensym 'main)])
+                             (sequence
+                              (Jmp main)
+                              (Program-instructions program)
+                              (Global main)
+                              (Call entry-point))))]
        [(labels)
         (memory-fold (λ (labels addr value)
-                       (if (Label? value)
-                           (cons (cons (Label-x value) addr) labels)
+                       (if (label-type? value)
+                           (cons (cons (get-label value) addr) labels)
                            labels))
                      (list)
                      memory
