@@ -93,25 +93,26 @@
 (struct Instruction () #:transparent)
 (define instruction? Instruction?)
 
-(define-syntax-rule
-  (define-instruction (Name (fields ...) guard))
-  (begin (provide (struct-out Name))
-         (struct Name Instruction (fields ...)
-           #:transparent
-           #:guard guard)))
-
 (define-syntax (define-instructions stx)
   (syntax-parse stx
-    [(_ instruction)
-     #'(define-instruction instruction)]
-    [(_ instruction instructions ...+)
-     #'(begin (define-instruction instruction)
-              (define-instructions instructions ...))]))
+    [(_ (Name (arg ...) (~optional guard #:defaults ([guard #'#f]))) ...+)
+     #'(begin (provide (struct-out Name) ...)
+              (struct Name Instruction (arg ...) #:transparent #:guard guard) ...
+              (provide get-instruction-name)
+              (define (get-instruction-name instruction)
+                (match instruction
+                  [(struct Name (arg ...)) 'Name] ...)))]))
 
 (define-instructions
-  (Extern (x)       check:label-symbol)
+  ;; Separate the input.
+  (Text   ())
+  (Data   ())
+  ;; Distinguish a subset of instructions.
   (Label  (x)       check:label-symbol)
-  (Ret    ()        check:none)
+  (Global (x)       check:label-symbol)
+  (Extern (x)       check:label-symbol)
+  ;; Regular instructions.
+  (Ret    ())
   (Call   (x)       check:target)
   (Mov    (dst src) check:src-dest)
   (Add    (dst src) check:arith)
@@ -121,7 +122,9 @@
   (Je     (x)       check:target)
   (Jne    (x)       check:target)
   (Jl     (x)       check:target)
+  (Jle    (x)       check:target)
   (Jg     (x)       check:target)
+  (Jge    (x)       check:target)
   (And    (dst src) check:src-dest)
   (Or     (dst src) check:src-dest)
   (Xor    (dst src) check:src-dest)
@@ -129,7 +132,11 @@
   (Sar    (dst i)   check:shift)
   (Push   (a1)      check:push)
   (Pop    (a1)      check:register)
-  (Lea    (dst x)   check:lea))
+  (Lea    (dst x)   check:lea)
+  (Div    (den)     check:register)
+  ;; Data instructions.
+  (Dd     (x))   ;; Define Double word.
+  (Dq     (x)))  ;; Define Quad word.
 
 (struct Offset (r i) #:transparent)
 (provide offset offset?)
