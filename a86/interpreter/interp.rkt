@@ -16,57 +16,71 @@
 (define (step state)
   (match state
     [(State first-inst last-inst runtime labels tick ip flags registers memory)
-     (let ([address-from-offset (curry address-from-offset registers)]
-           [make-state
-            (λ (#:with-ip [new-ip #f]
-                #:with-registers [new-registers #f]
-                #:with-flags [new-flags #f])
-              (State first-inst last-inst runtime labels
-                     (add1 tick)
-                     (or new-ip (next-word-aligned-address ip))
-                     (or new-flags flags)
-                     (or new-registers registers)
-                     memory))]
-           [process-argument
-            (λ (arg #:as [interpretation '()])
-              (cond
-                [(and (integer? arg)
-                      (or (equal? 'integer interpretation)
-                          (member 'integer interpretation)))
-                 (integer->unsigned arg)]
-                [(and (register? arg)
-                      (or (equal? 'register interpretation)
-                          (member 'register interpretation)))
-                 (hash-ref registers arg)]
-                [(and (offset? arg)
-                      (or (equal? 'offset interpretation)
-                          (member 'offset interpretation)))
-                 (address-from-offset registers arg)]
-                [(and (valid-address? memory arg)
-                      (or (equal? 'address interpretation)
-                          (member 'address interpretation)))
-                 (memory-ref memory arg)]
-                [(and (label? arg)
-                      (or (equal? 'label interpretation)
-                          (member 'label interpretation)))
-                 (let ([pair (assoc arg labels)])
-                   (if pair
-                       (cdr pair)
-                       (raise-user-error 'process-argument "not a valid label: ~a" arg)))]
-                [(empty? interpretation)
-                 (raise-user-error 'process-argument "no interpretation given to process argument")]
-                [else
-                 (raise-user-error 'process-argument
-                                   "unable to process argument ~v according to interpretation(s) ~a"
-                                   arg
-                                   interpretation)]))])
-       (match (memory-ref memory ip)
+     (let* ([current-instruction (memory-ref memory ip)]
+            [address-from-offset (curry address-from-offset registers)]
+            [make-state
+             (λ (#:with-ip [new-ip #f]
+                 #:with-registers [new-registers #f]
+                 #:with-flags [new-flags #f])
+               (State first-inst last-inst runtime labels
+                      (add1 tick)
+                      (or new-ip (next-word-aligned-address ip))
+                      (or new-flags flags)
+                      (or new-registers registers)
+                      memory))]
+            [process-argument
+             (λ (arg #:as [interpretation '()])
+               (let* ([op-name (get-instruction-name current-instruction)]
+                      [func-name (string->symbol (string-append "process-argument-"
+                                                                (symbol->string op-name)))])
+                 (cond
+                   [(and (or (equal? 'integer interpretation)
+                             (member 'integer interpretation))
+                         (integer? arg))
+                    (integer->unsigned arg)]
+                   [(and (or (equal? 'register interpretation)
+                             (member 'register interpretation))
+                         (register? arg))
+                    (hash-ref registers arg)]
+                   [(and (or (equal? 'offset interpretation)
+                             (member 'offset interpretation))
+                         (offset? arg))
+                    (address-from-offset registers arg)]
+                   [(and (or (equal? 'address interpretation)
+                             (member 'address interpretation))
+                         (valid-address? memory arg))
+                    (memory-ref memory arg)]
+                   [(and (or (equal? 'label interpretation)
+                             (member 'label interpretation))
+                         (symbol? arg))
+                    (let ([pair (assoc arg labels)])
+                      (if pair
+                          (cdr pair)
+                          (raise-user-error func-name "not a valid label: ~a" arg)))]
+                   [(and (or (equal? 'external-function interpretation)
+                             (member 'external-function interpretation))
+                         (symbol? arg))
+                    (let ([external-function (hash-ref runtime arg #:failure-result #f)])
+                      (if external-function
+                          external-function
+                          (raise-user-error func-name "not a valid external function: ~a" arg)))]
+                   [(empty? interpretation)
+                    (raise-user-error func-name "no interpretation given to process argument")]
+                   [else
+                    (raise-user-error func-name
+                                      "unable to process argument ~v according to interpretation(s) ~a"
+                                      arg
+                                      interpretation)])))])
+       (match current-instruction
          [(Extern l)
           ;; ensure external function exists in runtime, then skip
           (unless (hash-has-key? runtime l)
-            (raise-user-error 'step "reference to undefined external function ~a" l))
+            (raise-user-error 'step-Extern "reference to undefined external function ~a" l))
           (make-state)]
          [(Label _)
+          ;; skip
+          (make-state)]
+         [(Global _)
           ;; skip
           (make-state)]
          [(Ret)
@@ -79,19 +93,19 @@
                         #:with-registers new-registers))]
          [(Call (? (curry hash-has-key? runtime) external-function))
           ;; call the external function
-          (let* ([func (hash-ref runtime external-function)]
+          (let* ([func (process-argument external-function #:as 'external-function)]
                  [sp (hash-ref registers 'rsp)]
                  [result (func registers memory sp)])
             (cond
               [(void? result)
                (make-state)]
               [(not (integer? result))
-               (raise-user-error 'step
+               (raise-user-error 'step-Call
                                  "result of external function '~a' not #<void> or an integer; got ~v"
                                  external-function
                                  result)]
               [(not (<= (integer-length result) (word-size-bits)))
-               (raise-user-error 'step
+               (raise-user-error 'step-Call
                                  "integer result of external function '~a' too large; got ~v"
                                  external-function
                                  result)]
@@ -102,9 +116,7 @@
           ;; Mem.push(ip + wordsize)
           ;; ip = dst
           (let* ([return-address (next-word-aligned-address ip)]
-                 [new-ip (if (register? dst)
-                             (hash-ref registers dst)
-                             (memory-ref memory dst))]
+                 [new-ip (process-argument dst #:as '(register label))]
                  [new-sp (next-word-aligned-address (hash-ref registers 'rsp))]
                  [new-registers (hash-set registers 'rsp new-sp)])
             (memory-set! memory new-sp tick return-address)
