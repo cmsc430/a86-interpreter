@@ -1,11 +1,11 @@
 #lang racket
 
 (require rackunit
-         "../a86/interpreter/interp.rkt"
+         "../a86/interpreter/step.rkt"
          "../a86/interpreter/state.rkt"
          "../a86/interpreter/memory.rkt")
 
-(provide (all-from-out "../a86/interpreter/interp.rkt")
+(provide (all-from-out "../a86/interpreter/step.rkt")
          check-program
          check-program-exn
          test-program
