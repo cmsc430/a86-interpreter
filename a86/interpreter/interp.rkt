@@ -7,7 +7,7 @@
          "utility.rkt")
 
 (provide step
-         interp
+         multi-step
          initialize-state
          (all-from-out "../ast.rkt"
                        "utility.rkt"))
@@ -275,7 +275,7 @@
          [instruction
           (raise-user-error 'step "unrecognized instruction at address ~a: ~v" ip instruction)]))]))
 
-(define (interp state [steps 1000] [tracer #f])
+(define (multi-step state [steps 1000] [tracer #f])
   (when tracer
     (if (list? tracer)
         (map (λ (t) ((tracer-func t) t state)) tracer)
@@ -288,7 +288,7 @@
     [(< (State-instruction-pointer state) (State-last-instruction state))
      (cons state 'no-more-instructions)]
     [else
-     (interp (step state) (sub1 steps) tracer)]))
+     (multi-step (step state) (sub1 steps) tracer)]))
 
 (provide next-instruction)
 (define (next-instruction state)
