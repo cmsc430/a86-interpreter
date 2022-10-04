@@ -91,6 +91,7 @@
   (λ (n) (values)))
 
 (struct Instruction () #:transparent)
+(provide instruction?)
 (define instruction? Instruction?)
 
 (define-syntax (define-instructions stx)
