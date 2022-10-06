@@ -72,16 +72,10 @@
                                       arg
                                       interpretation)])))])
        (match current-instruction
-         [(Extern l)
-          ;; ensure external function exists in runtime, then skip
-          (unless (hash-has-key? runtime l)
-            (raise-user-error 'step-Extern "reference to undefined external function ~a" l))
-          (make-state)]
-         [(Label _)
-          ;; skip
-          (make-state)]
-         [(Global _)
-          ;; skip
+         [(or (? label-type?)
+              (? Comment?))
+          ;; do nothing; invariants associated with the label types should be
+          ;; checked either in Program construction or State initialization.
           (make-state)]
          [(Ret)
           ;; ip = Mem.pop()
