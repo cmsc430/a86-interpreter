@@ -9,7 +9,8 @@
 (module* private #f
   (provide current-shared?))
 
-(require "ast.rkt")
+(require "ast.rkt"
+         (only-in "interpreter/registers.rkt" register?))
 
 ;; Any -> Boolean
 (define (reg? x)
