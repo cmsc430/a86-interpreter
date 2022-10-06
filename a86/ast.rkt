@@ -90,6 +90,23 @@
 (define check:none
   (λ (n) (values)))
 
+(provide (struct-out %)
+         (struct-out %%)
+         (struct-out %%%)
+         Comment?)
+
+(struct Comment (str)
+  #:transparent
+  #:guard
+  (λ (s n)
+    (unless (string? s)
+      (error n "expects string; given ~v" s))
+    s))
+
+(struct %   Comment () #:transparent)
+(struct %%  Comment () #:transparent)
+(struct %%% Comment () #:transparent)
+
 (struct Instruction () #:transparent)
 (provide instruction?)
 (define instruction? Instruction?)
@@ -135,10 +152,25 @@
   (Pop    (a1)      check:register)
   (Lea    (dst x)   check:lea)
   (Div    (den)     check:register)
+  (Equ    (x v)     check:label-symbol+integer)
   ;; Data instructions.
   (Dd     (x))   ;; Define Double word.
   (Dq     (x)))  ;; Define Quad word.
 
+;; TODO: What is this? Is it necessary?
+(provide (struct-out Plus))
+(struct Plus (e1 e2) #:transparent)
+
+(provide exp?)
+(define (exp? x)
+  (or (Offset? x)
+      (and (Plus? x)
+           (exp? (Plus-e1 x))
+           (exp? (Plus-e2 x)))
+      (symbol? x)
+      (integer? x)))
+
+(provide Offset)
 (struct Offset (r i) #:transparent)
 (provide offset offset?)
 (define (offset r [i 0]) (Offset r i))
