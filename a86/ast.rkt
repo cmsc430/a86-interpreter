@@ -109,7 +109,9 @@
 
 (struct Instruction () #:transparent)
 (provide instruction?)
-(define instruction? Instruction?)
+(define (instruction? x)
+  (or (Instruction? x)
+      (Comment? x)))
 
 (define-syntax (define-instructions stx)
   (syntax-parse stx
