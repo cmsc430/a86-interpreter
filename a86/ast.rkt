@@ -203,40 +203,57 @@
     [(Global x) x]
     [(Extern x) x]))
 
-;; A Program is a list of instructions.
+;; A Program is a list of instructions with a defined entry point.
 ;;
 ;; TODO: It would be neat to define, say, [#lang a86] where the program can just
 ;; be directly written, and then the underlying implementation of the #lang
 ;; converts it into a [Program]. Don't know how practical or useful that is.
-(define (instruction-list-is-valid? instructions)
-  (match instructions
-    [(cons (Label _) _) #t]
-    [(cons (Global _) _) #t]
-    [(cons (Extern _) instructions)
-     (instruction-list-is-valid? instructions)]
-    [_ #f]))
 (provide (struct-out Program))
-(struct Program (instructions)
+(struct Program (instructions entry-point)
   #:transparent
-  #:guard (λ (instructions n)
+  ;; This guard ensures Programs are correct by construction with respect to a
+  ;; few criteria:
+  ;;
+  ;; - the argument should be a list of instructions
+  ;; - the list of instructions cannot be empty
+  ;; - there must be at least one Global instruction, to be used
+  ;; - there are no repeated labels, where a label is any symbol defined by a
+  ;;   Label or Extern
+  ;; - all Globals must correspond to Labels (not Externs) somewhere in the code
+  ;; - all elements of the list must be instructions according to [instruction?]
+  #:guard (λ (instructions entry-point n)
+            (unless (symbol? entry-point)
+              (raise-user-error n "program entry point must be a symbol; given ~v" entry-point))
             (unless (list? instructions)
-              (raise-user-error n "instructions must be given as a list"))
+              (raise-user-error n "instructions must be given as a list; given ~v" instructions))
             (unless (not (empty? instructions))
               (raise-user-error n "must be given at least one instruction"))
-            (unless (instruction-list-is-valid? instructions)
-              (raise-user-error
-               n
-               "instruction list must begin with zero or more Extern instructions followed by a Label or Global instruction; given ~v"
-               (first instructions)))
-            (for/fold ([labels (set)])
-                      ([instruction instructions])
-              (unless (instruction? instruction)
-                (raise-user-error n "all instructions must be valid; given ~v" instruction))
-              (match instruction
-                [(or (? Label? (app Label-x l))
-                     (? Extern? (app Extern-x l)))
-                 (when (set-member? labels l)
-                   (raise-user-error n "labels cannot be repeated; given ~v" l))
-                 (set-add labels l)]
-                [_ labels]))
-            instructions))
+            (define is-valid? #f)
+            (let-values ([(labels globals)
+                          (for/fold ([labels (set)]
+                                     [globals (set)])
+                                    ([instruction instructions])
+                            (unless (instruction? instruction)
+                              (raise-user-error n "all instructions must be valid; given ~v" instruction))
+                            (match instruction
+                              [(or (? Label? (app Label-x l))
+                                   (? Extern? (app Extern-x l)))
+                               (when (set-member? labels l)
+                                 (raise-user-error n "labels cannot be repeated; given ~v" l))
+                               (values (set-add labels l) globals)]
+                              [(Global l)
+                               (set! is-valid? #t)
+                               (values labels (set-add globals l))]
+                              [_ (values labels globals)]))])
+              (unless is-valid?
+                (raise-user-error n "instruction list must contain at least one Global instruction"))
+              (for ([g globals])
+                (unless (set-member? labels g)
+                  (raise-user-error n "global lacks corresponding label: ~v" g)))
+              (unless (set-member? globals entry-point)
+                (raise-user-error n "program entry point not defined as a global: ~v" entry-point)))
+            (values instructions entry-point)))
+
+(provide program)
+(define (program instructions [entry-point 'entry])
+  (Program instructions entry-point))
