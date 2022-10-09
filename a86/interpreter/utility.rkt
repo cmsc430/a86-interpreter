@@ -178,11 +178,22 @@
                                   (= 0 a2-sign)
                                   (= 0 masked-diff-sign))))
 
-;; Given two integers, calculates their bitwise product. Returns the product
+;; Given two integers, calculates their bitwise conjunction. Returns the result
 ;; along with a new set of flags.
 (define-binary-instruction (and a1 a2)
   #:base-computation (bitwise-and a1 a2)
-  #:result-name prod
+  #:carry-computation #f)
+
+;; Given two integers, calculates their bitwise inclusive disjunction. Returns
+;; the result along with a new set of flags.
+(define-binary-instruction (ior a1 a2)
+  #:base-computation (bitwise-ior a1 a2)
+  #:carry-computation #f)
+
+;; Given two integers, calculates their bitwise exclusive disjunction. Returns
+;; the result along with a new set of flags.
+(define-binary-instruction (xor a1 a2)
+  #:base-computation (bitwise-xor a1 a2)
   #:carry-computation #f)
 
 ;; Given an address, produces the word-aligned address that is [offset-in-words]
