@@ -1,6 +1,9 @@
 #lang racket
 
-(require "registers.rkt")
+(require "registers.rkt"
+
+         (for-syntax syntax/parse
+                     racket/syntax))
 
 (provide word-size-bytes
          word-size-bits
@@ -18,6 +21,9 @@
          unsigned-in-bounds?
          bitwise-add
          bitwise-sub
+         a86:add
+         a86:sub
+         a86:and
          word-aligned-offset
          previous-word-aligned-address
          next-word-aligned-address
@@ -169,6 +175,76 @@
                                    #:zero set-zero
                                    #:carry set-carry)])
        (values masked-diff flags))]))
+
+;; Provides a form for defining new binary instructions, such as Add and Sub.
+(define-syntax (define-binary-instruction stx)
+  (syntax-parse stx
+    [(_ (name arg1 arg2)
+        (~seq #:base-computation base-computation)
+        (~optional (~seq #:result-name result-name)
+                   #:defaults ([result-name #'value]))
+        (~optional (~seq #:overflow-computation overflow-computation))
+        (~optional (~seq #:sign-computation sign-computation))
+        (~optional (~seq #:zero-computation zero-computation))
+        (~optional (~seq #:carry-computation carry-computation)))
+     (with-syntax ([func-name (format-id #'name #:source #'name "a86:~a" (syntax-e #'name))]
+                   [base-result (format-id #'result-name "base-~a" (syntax-e #'result-name))]
+                   [masked-result (format-id #'result-name "masked-~a" (syntax-e #'result-name))]
+                   [masked-result-sign (format-id #'result-name "masked-~a-sign" (syntax-e #'result-name))]
+                   [arg1-sign (format-id #'arg1 "~a-sign" (syntax-e #'arg1))]
+                   [arg2-sign (format-id #'arg1 "~a-sign" (syntax-e #'arg2))])
+       #'(define (func-name arg1 arg2)
+           (unless (unsigned-in-bounds? arg1)
+             (raise-user-error 'func-name "first argument not within word size bounds: ~a" arg1))
+           (unless (unsigned-in-bounds? arg2)
+             (raise-user-error 'func-name "second argument not within word size bounds: ~a" arg2))
+           (let* ([sign-mask (sign)]
+                  [arg1-sign (bitwise-and sign-mask arg1)]
+                  [arg2-sign (bitwise-and sign-mask arg2)]
+                  [base-result base-computation]
+                  [masked-result (mask base-result)]
+                  [masked-result-sign (bitwise-and sign-mask masked-result)]
+                  [set-overflow? (~? (~@ overflow-computation)
+                                     (~@ #f))]
+                  [set-sign? (~? (~@ sign-computation)
+                                 (~@ (not (= 0 masked-result-sign))))]
+                  [set-zero? (~? (~@ zero-computation)
+                                 (~@ (= 0 masked-result)))]
+                  [set-carry? (~? (~@ carry-computation)
+                                  (~@ (= 0 (bitwise-and base-result
+                                                        (arithmetic-shift 1 (word-size-bits))))))]
+                  [flags (make-new-flags #:overflow set-overflow?
+                                         #:sign set-sign?
+                                         #:zero set-zero?
+                                         #:carry set-carry?)])
+             (values masked-result flags))))]))
+
+;; Given two integers, calculates their sum. Returns the sum along with a new
+;; set of flags.
+(define-binary-instruction (add a1 a2)
+  #:base-computation (+ a1 a2)
+  #:result-name sum
+  #:overflow-computation (and (= a1-sign a2-sign)
+                              (not (= a1-sign masked-sum-sign))))
+
+;; Given two integers, calculates their difference. Returns the difference along
+;; with a new set of flags.
+(define-binary-instruction (sub a1 a2)
+  #:base-computation (- a1 a2)
+  #:result-name diff
+  #:overflow-computation (or (and (= 0 a1-sign)
+                                  (not (= 0 a2-sign))
+                                  (not (= 0 masked-diff-sign)))
+                             (and (not (= 0 a1-sign))
+                                  (= 0 a2-sign)
+                                  (= 0 masked-diff-sign))))
+
+;; Given two integers, calculates their bitwise product. Returns the product
+;; along with a new set of flags.
+(define-binary-instruction (and a1 a2)
+  #:base-computation (bitwise-and a1 a2)
+  #:result-name prod
+  #:carry-computation #f)
 
 ;; Given an address, produces the word-aligned address that is [offset-in-words]
 ;; words lower than the given' address word-aligned address.
