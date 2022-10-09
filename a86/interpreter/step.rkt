@@ -204,7 +204,7 @@
           ;; % update flags according to [a1 - a2]
           (let*-values ([(arg1) (process-argument a1 #:as '(register offset))]
                         [(arg2) (process-argument a2 #:as '(register offset integer))]
-                        [(_ new-flags) (bitwise-sub arg1 arg2)])
+                        [(_ new-flags) (a86:sub arg1 arg2)])
             (make-state #:with-flags new-flags))]
          [(Jmp t)
           ;; ip = t
