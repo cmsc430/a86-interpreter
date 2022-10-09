@@ -155,26 +155,20 @@
                         #:with-flags new-flags))]
          [(Or dst src)
           ;; dst = dst | src
-          (let* ([argument (process-argument src #:as '(register offset integer))]
-                 [base (process-argument dst #:as '(register offset))]
-                 [computed-or (bitwise-ior base argument)])
-            (cond
-              [(register? dst)
-               (make-state #:with-registers (hash-set registers dst computed-or))]
-              [(offset? dst)
-               (memory-set! memory (address-from-offset dst) tick computed-or)
-               (make-state)]))]
+          (let*-values ([(argument) (process-argument src #:as '(register offset integer))]
+                        [(base) (process-argument dst #:as '(register offset))]
+                        [(computed-ior new-flags) (a86:ior base argument)]
+                        [(new-registers) (hash-set registers dst computed-ior)])
+            (make-state #:with-registers new-registers
+                        #:with-flags new-flags))]
          [(Xor dst src)
           ;; dst = dst ^ src
-          (let* ([argument (process-argument src #:as '(register offset integer))]
-                 [base (process-argument dst #:as '(register offset))]
-                 [computed-xor (bitwise-xor base argument)])
-            (cond
-              [(register? dst)
-               (make-state #:with-registers (hash-set registers dst computed-xor))]
-              [(offset? dst)
-               (memory-set! memory (address-from-offset dst) tick computed-xor)
-               (make-state)]))]
+          (let*-values ([(argument) (process-argument src #:as '(register offset integer))]
+                        [(base) (process-argument dst #:as '(register offset))]
+                        [(computed-xor new-flags) (a86:xor base argument)]
+                        [(new-registers) (hash-set registers dst computed-xor)])
+            (make-state #:with-registers new-registers
+                        #:with-flags new-flags))]
          [(Sal dst i)
           ;; dst = dst << i
           ;;
