@@ -145,43 +145,18 @@
                         [(new-registers) (hash-set registers dst computed-diff)])
             (make-state #:with-registers new-registers
                         #:with-flags new-flags))]
-         [(Cmp a1 a2)
-          ;; % update flags according to [a1 - a2]
-          (let*-values ([(arg1) (process-argument a1 #:as '(register offset))]
-                        [(arg2) (process-argument a2 #:as '(register offset integer))]
-                        [(_ new-flags) (bitwise-sub arg1 arg2)])
-            (make-state #:with-flags new-flags))]
-         [(Jmp t)
-          ;; ip = t
-          (make-state #:with-ip (process-argument t #:as '(register label)))]
-         [(Je t)
-          ;; if Flags[ZF], ip = t
-          (make-state #:with-ip (if (hash-ref flags 'ZF)
-                                    (process-argument t #:as '(register label))
-                                    (next-word-aligned-address ip)))]
-         [(Jne t)
-          ;; if not Flags[ZF], ip = t
-          (make-state #:with-ip (if (not (hash-ref flags 'ZF))
-                                    (process-argument t #:as '(register label))
-                                    (next-word-aligned-address ip)))]
-         [(Jl t)
-          ;; if Flags[SF] <> Flags[OF], ip = t
-          (make-state #:with-ip (if (xor (hash-ref flags 'SF)
-                                         (hash-ref flags 'OF))
-                                    (process-argument t #:as '(register label))
-                                    (next-word-aligned-address ip)))]
-         [(Jg t)
-          ;; if not Flags[ZF] and (Flags[SF] == Flags[OF]), ip = t
-          (make-state #:with-ip (if (and (not (hash-ref flags 'ZF))
-                                         (= (hash-ref flags 'SF)
-                                            (hash-ref flags 'OF)))
-                                    (process-argument t #:as '(register label))
-                                    (next-word-aligned-address ip)))]
          [(And dst src)
           ;; dst = dst & src
-          (let* ([argument (process-argument src #:as '(register offset integer))]
+          (let*-values ([(argument) (process-argument src #:as '(register offset integer))]
+                        [(base) (process-argument dst #:as '(register offset))]
+                        [(computed-and new-flags) (a86:and base argument)]
+                        [(new-registers) (hash-set registers dst computed-and)])
+            (make-state #:with-registers new-registers
+                        #:with-flags new-flags))
+          #;(let* ([argument (process-argument src #:as '(register offset integer))]
                  [base (process-argument dst #:as '(register offset))]
-                 [computed-and (bitwise-and base argument)])
+                 [computed-and (a86:and base argument)]
+                 [new-flags (make-new-flags #:sign )])
             (cond
               [(register? dst)
                (make-state #:with-registers (hash-set registers dst computed-and))]
@@ -241,6 +216,38 @@
                  [new-flags (make-new-flags #:carry new-carry)])
             (make-state #:with-registers new-registers
                         #:with-flags new-flags))]
+         [(Cmp a1 a2)
+          ;; % update flags according to [a1 - a2]
+          (let*-values ([(arg1) (process-argument a1 #:as '(register offset))]
+                        [(arg2) (process-argument a2 #:as '(register offset integer))]
+                        [(_ new-flags) (bitwise-sub arg1 arg2)])
+            (make-state #:with-flags new-flags))]
+         [(Jmp t)
+          ;; ip = t
+          (make-state #:with-ip (process-argument t #:as '(register label)))]
+         [(Je t)
+          ;; if Flags[ZF], ip = t
+          (make-state #:with-ip (if (hash-ref flags 'ZF)
+                                    (process-argument t #:as '(register label))
+                                    (next-word-aligned-address ip)))]
+         [(Jne t)
+          ;; if not Flags[ZF], ip = t
+          (make-state #:with-ip (if (not (hash-ref flags 'ZF))
+                                    (process-argument t #:as '(register label))
+                                    (next-word-aligned-address ip)))]
+         [(Jl t)
+          ;; if Flags[SF] <> Flags[OF], ip = t
+          (make-state #:with-ip (if (xor (hash-ref flags 'SF)
+                                         (hash-ref flags 'OF))
+                                    (process-argument t #:as '(register label))
+                                    (next-word-aligned-address ip)))]
+         [(Jg t)
+          ;; if not Flags[ZF] and (Flags[SF] == Flags[OF]), ip = t
+          (make-state #:with-ip (if (and (not (hash-ref flags 'ZF))
+                                         (= (hash-ref flags 'SF)
+                                            (hash-ref flags 'OF)))
+                                    (process-argument t #:as '(register label))
+                                    (next-word-aligned-address ip)))]
          [(Push a1)
           ;; Mem.push(a1)
           (let* ([base (process-argument a1 #:as '(register integer))]
