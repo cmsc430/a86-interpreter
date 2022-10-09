@@ -19,8 +19,6 @@
          mask
          make-full-mask
          unsigned-in-bounds?
-         bitwise-add
-         bitwise-sub
          a86:add
          a86:sub
          a86:and
@@ -116,65 +114,6 @@
 ;; information.
 (define (unsigned-in-bounds? n)
   (= n (mask n)))
-
-;; Given two integers, calculates their sum. Returns the sum along with a new
-;; set of flags.
-(define (bitwise-add a1 a2)
-  (cond
-    [(not (unsigned-in-bounds? a1))
-     (raise-user-error 'bitwise-add "first argument not within word size bounds: ~a" a1)]
-    [(not (unsigned-in-bounds? a2))
-     (raise-user-error 'bitwise-add "second argument not within word size bounds: ~a" a2)]
-    [else
-     (let* ([sign (sign)]
-            [base-sum (+ a1 a2)]
-            [masked-sum (mask base-sum)]
-            [a1-sign (bitwise-and sign a1)]
-            [a2-sign (bitwise-and sign a2)]
-            [args-same-sign (= a1-sign a2-sign)]
-            [sum-sign (bitwise-and sign masked-sum)]
-            [set-overflow (and args-same-sign
-                               (not (= a1-sign sum-sign)))]
-            [set-sign (not (= 0 sum-sign))]
-            [set-zero (= 0 masked-sum)]
-            [set-carry (not (= 0 (bitwise-and base-sum
-                                              (arithmetic-shift 1 (word-size-bits)))))]
-            [flags (make-new-flags #:overflow set-overflow
-                                   #:sign set-sign
-                                   #:zero set-zero
-                                   #:carry set-carry)])
-       (values masked-sum flags))]))
-
-;; Given two integers, calculates their difference. Returns the difference along
-;; with a new set of flags.
-(define (bitwise-sub a1 a2)
-  (cond
-    [(not (unsigned-in-bounds? a1))
-     (raise-user-error 'bitwise-sub "first argument not within word size bounds: ~a" a1)]
-    [(not (unsigned-in-bounds? a2))
-     (raise-user-error 'bitwise-sub "second argument not within word size bounds: ~a" a2)]
-    [else
-     (let* ([sign (sign)]
-            [base-diff (- a1 a2)]
-            [masked-diff (mask base-diff)]
-            [a1-sign (bitwise-and sign a1)]
-            [a2-sign (bitwise-and sign a2)]
-            [diff-sign (bitwise-and sign masked-diff)]
-            [set-overflow (or (and (= 0 a1-sign)
-                                   (not (= 0 a2-sign))
-                                   (not (= 0 diff-sign)))
-                              (and (not (= 0 a1-sign))
-                                   (= 0 a2-sign)
-                                   (= 0 diff-sign)))]
-            [set-sign (not (= 0 diff-sign))]
-            [set-zero (= 0 masked-diff)]
-            [set-carry (not (= 0 (bitwise-and base-diff
-                                              (arithmetic-shift 1 (word-size-bits)))))]
-            [flags (make-new-flags #:overflow set-overflow
-                                   #:sign set-sign
-                                   #:zero set-zero
-                                   #:carry set-carry)])
-       (values masked-diff flags))]))
 
 ;; Provides a form for defining new binary instructions, such as Add and Sub.
 (define-syntax (define-binary-instruction stx)

@@ -132,7 +132,7 @@
           ;; % update flags according to [dst + src]
           (let*-values ([(argument) (process-argument src #:as '(register offset integer))]
                         [(base) (hash-ref registers dst)]
-                        [(computed-sum new-flags) (bitwise-add base argument)]
+                        [(computed-sum new-flags) (a86:add base argument)]
                         [(new-registers) (hash-set registers dst computed-sum)])
             (make-state #:with-registers new-registers
                         #:with-flags new-flags))]
@@ -141,7 +141,7 @@
           ;; % update flags according to [dst - src]
           (let*-values ([(argument) (process-argument src #:as '(register offset integer))]
                         [(base) (hash-ref registers dst)]
-                        [(computed-diff new-flags) (bitwise-sub base argument)]
+                        [(computed-diff new-flags) (a86:sub base argument)]
                         [(new-registers) (hash-set registers dst computed-diff)])
             (make-state #:with-registers new-registers
                         #:with-flags new-flags))]
@@ -152,17 +152,7 @@
                         [(computed-and new-flags) (a86:and base argument)]
                         [(new-registers) (hash-set registers dst computed-and)])
             (make-state #:with-registers new-registers
-                        #:with-flags new-flags))
-          #;(let* ([argument (process-argument src #:as '(register offset integer))]
-                 [base (process-argument dst #:as '(register offset))]
-                 [computed-and (a86:and base argument)]
-                 [new-flags (make-new-flags #:sign )])
-            (cond
-              [(register? dst)
-               (make-state #:with-registers (hash-set registers dst computed-and))]
-              [(offset? dst)
-               (memory-set! memory (address-from-offset dst) tick computed-and)
-               (make-state)]))]
+                        #:with-flags new-flags))]
          [(Or dst src)
           ;; dst = dst | src
           (let* ([argument (process-argument src #:as '(register offset integer))]
