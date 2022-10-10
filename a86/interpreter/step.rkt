@@ -176,12 +176,12 @@
           (let* ([base (process-argument dst #:as 'register)]
                  [shifted (mask (arithmetic-shift base i))]
                  [new-registers (hash-set registers dst shifted)]
-                 [new-carry (not (= 0 (bitwise-and (arithmetic-shift (arithmetic-shift 1 (word-size-bits)) (- i))
-                                                   base)))]
-                 [new-overflow (and (= 1 i)
-                                    (not (or (and new-carry (not (= 0 (bitwise-and (sign) shifted))))
-                                             (and (not new-carry) (= 0 (bitwise-and (sign) shifted))))))]
-                 [new-flags (make-new-flags #:overflow new-overflow #:carry new-carry)])
+                 [set-carry? (not (= 0 (bitwise-and (arithmetic-shift (arithmetic-shift 1 (word-size-bits)) (- i))
+                                                    base)))]
+                 [set-overflow? (and (= 1 i)
+                                     (not (or (and      set-carry?  (not (= 0 (bitwise-and (sign) shifted))))
+                                              (and (not set-carry?)      (= 0 (bitwise-and (sign) shifted))))))]
+                 [new-flags (make-new-flags #:overflow set-overflow? #:carry set-carry?)])
             (make-state #:with-registers new-registers
                         #:with-flags new-flags))]
          [(Sar dst i)
@@ -195,9 +195,9 @@
                              (bitwise-ior shifted (make-full-mask (- i)))
                              shifted)]
                  [new-registers (hash-set registers dst masked)]
-                 [new-carry (not (= 0 (bitwise-and (arithmetic-shift 1 (- i 1))
-                                                   base)))]
-                 [new-flags (make-new-flags #:carry new-carry)])
+                 [set-carry? (not (= 0 (bitwise-and (arithmetic-shift 1 (- i 1))
+                                                    base)))]
+                 [new-flags (make-new-flags #:carry set-carry?)])
             (make-state #:with-registers new-registers
                         #:with-flags new-flags))]
          [(Cmp a1 a2)
