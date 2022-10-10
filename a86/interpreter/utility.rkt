@@ -22,6 +22,8 @@
          a86:add
          a86:sub
          a86:and
+         a86:ior
+         a86:xor
          word-aligned-offset
          previous-word-aligned-address
          next-word-aligned-address
