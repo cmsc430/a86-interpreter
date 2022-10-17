@@ -209,51 +209,66 @@
 ;; be directly written, and then the underlying implementation of the #lang
 ;; converts it into a [Program]. Don't know how practical or useful that is.
 (provide (struct-out Program))
-(struct Program (instructions entry-point)
-  #:transparent
-  ;; This guard ensures Programs are correct by construction with respect to a
-  ;; few criteria:
-  ;;
-  ;; - the argument should be a list of instructions
-  ;; - the list of instructions cannot be empty
-  ;; - there must be at least one Global instruction, to be used
-  ;; - there are no repeated labels, where a label is any symbol defined by a
-  ;;   Label or Extern
-  ;; - all Globals must correspond to Labels (not Externs) somewhere in the code
-  ;; - all elements of the list must be instructions according to [instruction?]
-  #:guard (λ (instructions entry-point n)
-            (unless (symbol? entry-point)
-              (raise-user-error n "program entry point must be a symbol; given ~v" entry-point))
-            (unless (list? instructions)
-              (raise-user-error n "instructions must be given as a list; given ~v" instructions))
-            (unless (not (empty? instructions))
-              (raise-user-error n "must be given at least one instruction"))
-            (define is-valid? #f)
-            (let-values ([(labels globals)
-                          (for/fold ([labels (set)]
-                                     [globals (set)])
-                                    ([instruction instructions])
-                            (unless (instruction? instruction)
-                              (raise-user-error n "all instructions must be valid; given ~v" instruction))
-                            (match instruction
-                              [(or (? Label? (app Label-x l))
-                                   (? Extern? (app Extern-x l)))
-                               (when (set-member? labels l)
-                                 (raise-user-error n "labels cannot be repeated; given ~v" l))
-                               (values (set-add labels l) globals)]
-                              [(Global l)
-                               (set! is-valid? #t)
-                               (values labels (set-add globals l))]
-                              [_ (values labels globals)]))])
-              (unless is-valid?
-                (raise-user-error n "instruction list must contain at least one Global instruction"))
-              (for ([g globals])
-                (unless (set-member? labels g)
-                  (raise-user-error n "global lacks corresponding label: ~v" g)))
-              (unless (set-member? globals entry-point)
-                (raise-user-error n "program entry point not defined as a global: ~v" entry-point)))
-            (values instructions entry-point)))
+(struct Program (instructions entry-point labels globals externs) #:transparent)
 
-(provide program)
-(define (program instructions [entry-point 'entry])
-  (Program instructions entry-point))
+(define (initialize-program instructions entry-point)
+  (when (instruction? instructions)
+    (set! instructions (list instructions)))
+  (unless (list? instructions)
+    (raise-user-error 'program "not a list: ~v" instructions))
+  (unless (not (empty? instructions))
+    (raise-user-error 'program "must be given at least one instruction"))
+  (unless (or (symbol? entry-point)
+              (eq? #f entry-point))
+    (raise-user-error 'program "entry point not a symbol: ~v" entry-point))
+  (let*-values ([(first-global) #f]
+                [(labels globals externs)
+                 (for/fold ([labels (set)]
+                            [globals (set)]
+                            [externs (set)])
+                           ([instruction instructions])
+                   (unless (instruction? instruction)
+                     (raise-user-error 'program "not an instruction: ~v" instruction))
+                   (match instruction
+                     [(Label l)
+                      (when (set-member? labels l)
+                        (raise-user-error 'program "repeated internal label: ~v" l))
+                      (when (set-member? externs l)
+                        (raise-user-error 'program "internal label was previously declared external: ~v" l))
+                      (values (set-add labels l) globals externs)]
+                     [(Global l)
+                      (when (set-member? globals l)
+                        (raise-user-error 'program "repeated global declaration: ~v" l))
+                      (unless first-global
+                        (set! first-global l))
+                      (values labels (set-add globals l) externs)]
+                     [(Extern l)
+                      (when (set-member? externs l)
+                        (raise-user-error 'program "repeated external label: ~v" l))
+                      (when (set-member? labels l)
+                        (raise-user-error 'program "external label was previously declared internal: ~v" l))
+                      (values labels globals (set-add externs l))]
+                     [_ (values labels globals externs)]))])
+    (when (set-empty? labels)
+      (raise-user-error 'program "program must contain at least one internal label"))
+    (when (set-empty? globals)
+      (raise-user-error 'program "program must contain at least one global declaration"))
+    (for ([g globals])
+      (unless (set-member? labels g)
+        (raise-user-error 'program "global declaration lacks corresponding internal label: ~v" g)))
+    (when (eq? #f entry-point)
+      (set! entry-point first-global))
+    (unless (set-member? globals entry-point)
+      (raise-user-error 'program "missing global declaration for specified program entry point: ~v" entry-point))
+    (Program instructions entry-point labels globals externs)))
+
+(provide define-program)
+;; Processes a given list of instructions to produce a Program.
+(define-syntax (define-program stx)
+  (syntax-parse stx
+    [(_ (~optional (~seq #:entry-point entry-point) #:defaults ([entry-point #'#f]))
+        instructions)
+     #'(initialize-program instructions entry-point)]
+    [(_ (~optional (~seq #:entry-point entry-point) #:defaults ([entry-point #'#f]))
+        instruction ...+)
+     #'(initialize-program (list instruction ...) entry-point)]))

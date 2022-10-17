@@ -47,6 +47,8 @@
                last-instruction
                runtime
                labels
+               globals
+               externs
                time-tick
                instruction-pointer
                flags
@@ -88,27 +90,31 @@
 
 ;; Given a [Program], initializes the machine state.
 (define (initialize-state program
-                          #:entry-point [entry-point 'entry]
                           #:runtime [runtime (hash)])
   (let*-values
-      ([(ip sp memory)
+      ([(entry-point) (Program-entry-point program)]
+       [(ip sp memory)
         (initialize-memory (let ([main (gensym 'main)])
                              (sequence
                               (Jmp main)
                               (Program-instructions program)
                               (Global main)
                               (Call entry-point))))]
-       [(labels)
-        (memory-fold (λ (labels addr value)
-                       (if (label-type? value)
-                           (cons (cons (get-label value) addr) labels)
-                           labels))
-                     (list)
-                     memory
-                     #f (next-word-aligned-address sp))]
+       [(labels) (memory-fold (λ (labels addr value)
+                                (match value
+                                  [(or (Label l)
+                                       (Extern l))
+                                   (cons (cons l addr) labels)]
+                                  [_ labels])
+                                (list)
+                                memory
+                                #f (next-word-aligned-address sp)))]
+       ;; [(for/hash )]  ;; TODO: new for/fold/memory?
+       [(globals) (Program-globals program)]
+       [(externs) (Program-externs program)]
        [(registers)
         (hash-set new-registers 'rsp sp)]
        [(runtime)
         (for/hash ([(key func) (in-hash runtime)])
           (values key (convert-external-function func)))])
-    (State ip sp runtime labels 0 ip new-flags registers memory)))
+    (State ip sp runtime labels globals externs 0 ip new-flags registers memory)))

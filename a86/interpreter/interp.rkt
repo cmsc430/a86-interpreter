@@ -8,7 +8,7 @@
 (define (interp instructions
                 #:entry-point [entry-point 'entry]
                 #:runtime [runtime (hash)])
-  (match (multi-step (initialize-state (program instructions)
+  (match (multi-step (initialize-state (define-program instructions)
                                        #:entry-point entry-point
                                        #:runtime runtime))
     [(cons state _)
