@@ -98,17 +98,17 @@
                              (sequence
                               (Jmp main)
                               (Program-instructions program)
-                              (Global main)
+                              (Label main)
                               (Call entry-point))))]
        [(labels) (memory-fold (λ (labels addr value)
                                 (match value
                                   [(or (Label l)
                                        (Extern l))
                                    (cons (cons l addr) labels)]
-                                  [_ labels])
-                                (list)
-                                memory
-                                #f (next-word-aligned-address sp)))]
+                                  [_ labels]))
+                              (list)
+                              memory
+                              #f (next-word-aligned-address sp))]
        ;; [(for/hash )]  ;; TODO: new for/fold/memory?
        [(globals) (Program-globals program)]
        [(externs) (Program-externs program)]
