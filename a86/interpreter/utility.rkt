@@ -224,7 +224,7 @@
 (define (aligned-to-word? address)
   (= 0 (modulo address (word-size-bytes))))
 
-;; Combine lists and individual elements willy-nilly.
+;; Combines lists and individual elements willy-nilly.
 (define (sequence . xs)
   (foldr (λ (x xs)
            (if (list? x)
