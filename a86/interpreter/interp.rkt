@@ -6,11 +6,8 @@
          "step.rkt")
 
 (define (interp instructions
-                #:entry-point [entry-point 'entry]
                 #:runtime [runtime (hash)])
-  (match (multi-step (initialize-state (define-program
-                                         #:entry-point entry-point
-                                         instructions)
+  (match (multi-step (initialize-state (define-program instructions)
                                        #:runtime runtime))
     [(cons state _)
      (hash-ref (State-registers state) 'rax)]))
