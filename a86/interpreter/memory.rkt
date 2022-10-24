@@ -218,8 +218,8 @@
      (raise-user-error 'memory-set! "not memory: ~v" memory)]
     [(not (integer? value))
      (raise-user-error 'memory-set! "values to be stored in memory must be integers; got: ~v" value)]
-    [(not (= 0 (arithmetic-shift value (- (word-size-bits)))))
-     (raise-user-error 'memory-set! "values to be stored in memory must be no larger than ~a bits" (word-size-bits))]
+    [(not (= 0 (arithmetic-shift value (- word-size-bits))))
+     (raise-user-error 'memory-set! "values to be stored in memory must be no larger than ~a bits" word-size-bits)]
     [(> address (Memory-max-address memory))
      (raise-user-error 'memory-set! "expected address less than ~a; got ~a" (Memory-max-address memory) address)]
     [(< address (Memory-min-address memory))

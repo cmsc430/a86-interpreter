@@ -105,7 +105,7 @@
                                    "result of external function '~a' not #<void> or an integer; got ~v"
                                    external-function
                                    result)]
-                [(not (<= (integer-length result) (word-size-bits)))
+                [(not (<= (integer-length result) word-size-bits))
                  (raise-user-error 'step-Call
                                    "integer result of external function '~a' too large; got ~v"
                                    external-function
@@ -179,11 +179,11 @@
            [(Sal dst i)
             ;; dst = dst << i
             ;;
-            ;; NOTE: It is assumed that [i] must be on [0, (word-size-bits) - 1].
+            ;; NOTE: It is assumed that [i] must be on [0, word-size-bits - 1].
             (let* ([base (process-argument dst #:as 'register)]
                    [shifted (mask (arithmetic-shift base i))]
                    [new-registers (hash-set registers dst shifted)]
-                   [set-carry? (not (= 0 (bitwise-and (arithmetic-shift (arithmetic-shift 1 (word-size-bits)) (- i))
+                   [set-carry? (not (= 0 (bitwise-and (arithmetic-shift (arithmetic-shift 1 word-size-bits) (- i))
                                                       base)))]
                    [set-overflow? (and (= 1 i)
                                        (not (or (and      set-carry?  (not (= 0 (bitwise-and (sign) shifted))))
@@ -194,7 +194,7 @@
            [(Sar dst i)
             ;; dst = dst >> i
             ;;
-            ;; NOTE: It is assumed that [i] must be on [0, (word-size-bits) - 1].
+            ;; NOTE: It is assumed that [i] must be on [0, word-size-bits - 1].
             (let* ([base (process-argument dst #:as 'register)]
                    [msb? (not (= 0 (bitwise-and (sign) base)))]
                    [shifted (arithmetic-shift base (- i))]

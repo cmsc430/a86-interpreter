@@ -60,9 +60,9 @@
   (λ (a1 a2 n)
     (unless (register? a1)
       (error n "expects register; given ~v" a1))
-    (unless (or (and (exact-integer? a2) (<= 0 a2 (sub1 (word-size-bits))))
+    (unless (or (and (exact-integer? a2) (<= 0 a2 (sub1 word-size-bits)))
                 (eq? 'cl a2))
-      (error n "expects exact integer in [0,~a]; given ~v" (sub1 (word-size-bits)) a2))
+      (error n "expects exact integer in [0,~a]; given ~v" (sub1 word-size-bits) a2))
     (values a1 a2)))
 
 (define check:offset

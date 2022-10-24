@@ -32,9 +32,9 @@
          sequence)
 
 ;; The size of words, given in bytes.
-(define word-size-bytes (make-parameter 8))
+(define word-size-bytes 8)
 ;; The size of words, given in bits.
-(define (word-size-bits) (* 8 (word-size-bytes)))
+(define word-size-bits (* 8 word-size-bytes))
 
 ;; Given either an integer or a byte string, returns a string representing that
 ;; value in either binary or hexadecimal.
@@ -46,11 +46,11 @@
 (define (format-word value [mode 'binary])
   (cond
     [(bytes? value)
-     (unless (= (bytes-length value) (word-size-bytes))
+     (unless (= (bytes-length value) word-size-bytes)
        (raise-user-error 'format-word
                          "given byte string contains ~a bytes; expected ~a"
                          (bytes-length value)
-                         (word-size-bytes)))
+                         word-size-bytes))
      (apply string-append
             (map (λ (b) (format-word b mode 1))
                  (bytes->list value)))]
@@ -59,28 +59,28 @@
        (raise-user-error 'format-word
                          "given negative integer ~a"
                          value))
-     (unless (<= value (sub1 (expt 2 (* 8 (word-size-bytes)))))
+     (unless (<= value (sub1 (expt 2 (* 8 word-size-bytes))))
        (raise-user-error 'format-word
                          "given too-large integer ~a"
                          value))
      (match mode
        [(or 'binary 'bin 'b)
-        (~r value #:base 2 #:min-width (word-size-bits) #:pad-string "0")]
+        (~r value #:base 2 #:min-width word-size-bits #:pad-string "0")]
        [(or 'hexadecimal 'hex 'h)
-        (~r value #:base 16 #:min-width (word-size-bytes) #:pad-string "0")])]))
+        (~r value #:base 16 #:min-width word-size-bytes #:pad-string "0")])]))
 
 
 ;; Maximum and minimum values for signed and unsigned representations.
-(define (max-signed) (sub1 (arithmetic-shift 1 (sub1 (word-size-bits)))))
-(define (min-signed) (arithmetic-shift 1 (sub1 (word-size-bits))))
-(define (max-unsigned) (sub1 (arithmetic-shift 1 (word-size-bits))))
+(define (max-signed) (sub1 (arithmetic-shift 1 (sub1 word-size-bits))))
+(define (min-signed) (arithmetic-shift 1 (sub1 word-size-bits)))
+(define (max-unsigned) (sub1 (arithmetic-shift 1 word-size-bits)))
 (define (min-unsigned) 0)
 
 ;; Produces an empty set of bytes.
-(define (make-empty-bytes) (bytes->immutable-bytes (make-bytes (word-size-bytes) 0)))
+(define (make-empty-bytes) (bytes->immutable-bytes (make-bytes word-size-bytes 0)))
 
 ;; A mask for the sign bit.
-(define (sign) (arithmetic-shift 1 (sub1 (word-size-bits))))
+(define (sign) (arithmetic-shift 1 (sub1 word-size-bits)))
 
 ;; Converts an unsigned integer representation to its signed representation.
 (define (integer->signed n)
@@ -99,7 +99,7 @@
 ;; with the current word size.
 (define (mask n)
   (bitwise-and (integer->unsigned n)
-               (sub1 (arithmetic-shift 1 (word-size-bits)))))
+               (sub1 (arithmetic-shift 1 word-size-bits))))
 
 ;; Constructs a bit-mask. If [n] is non-negative, the mask is constructed
 ;; starting from the least-significant bit. If [n] is negative, the mask is
@@ -109,7 +109,7 @@
       ;; Mask from the least-significant bits.
       (sub1 (arithmetic-shift 1 n))
       (bitwise-xor (max-unsigned)
-                   (sub1 (arithmetic-shift 1 (- (word-size-bits)
+                   (sub1 (arithmetic-shift 1 (- word-size-bits
                                                 (- n)))))))
 
 ;; Determines whether masking the unsigned representation of a number loses any
@@ -153,7 +153,7 @@
                                  (~@ (= 0 masked-result)))]
                   [set-carry? (~? (~@ carry-computation)
                                   (~@ (= 0 (bitwise-and base-result
-                                                        (arithmetic-shift 1 (word-size-bits))))))]
+                                                        (arithmetic-shift 1 word-size-bits)))))]
                   [flags (make-new-flags #:overflow set-overflow?
                                          #:sign set-sign?
                                          #:zero set-zero?
@@ -201,7 +201,7 @@
 ;; Given an address, produces the word-aligned address that is [offset-in-words]
 ;; words lower than the given' address word-aligned address.
 (define (word-aligned-offset address offset-in-words)
-  (- (align-address-to-word address) (* (word-size-bytes) offset-in-words)))
+  (- (align-address-to-word address) (* word-size-bytes offset-in-words)))
 
 ;; Given an address, produces the previous word-aligned address from the given
 ;; address's word-aligned address.
@@ -217,12 +217,12 @@
 ;; the value of [word-size-bytes]. If the given address is word-aligned, it is
 ;; returned unchanged.
 (define (align-address-to-word address)
-  (- address (modulo address (word-size-bytes))))
+  (- address (modulo address word-size-bytes)))
 
 ;; Determines whether an address is properly word-aligned, according to the
 ;; value of [word-size-bytes].
 (define (aligned-to-word? address)
-  (= 0 (modulo address (word-size-bytes))))
+  (= 0 (modulo address word-size-bytes)))
 
 ;; Combines lists and individual elements willy-nilly.
 (define (sequence . xs)
