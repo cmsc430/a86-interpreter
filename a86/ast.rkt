@@ -5,12 +5,16 @@
          racket/set
          (for-syntax syntax/parse))
 
+(provide (rename-out [sequence seq]))
+
 (define check:label-symbol
   (λ (x n)
     (when (register? x)
       (error n "cannot use register as label name; given ~v" x))
     (unless (symbol? x)
       (error n "expects symbol; given ~v" x))
+    (unless (label? x)
+      (error n "label names must conform to nasm restrictions"))
     x))
 
 (define check:label-symbol+integer
@@ -79,11 +83,7 @@
   (λ (dst x n)
     (unless (or (register? dst) (offset? dst))
       (error n "expects register or offset; given ~v" dst))
-    ;; TODO: Implement this part.
-    ;; TODO: Do we need this part? The [exp?] predicate has to do with the
-    ;; [Plus] struct in the original a86, but I can't figure what [Plus] is
-    ;; actually for.
-    #;(unless (or (label? x) (offset? x) (exp? x))
+    (unless (or (label? x) (offset? x) (exp? x))
       (error n "expects label, offset, or expression; given ~v" x))
     (values dst x)))
 
@@ -173,7 +173,16 @@
       (integer? x)))
 
 (provide Offset)
-(struct Offset (r i) #:transparent)
+(struct
+  Offset
+  (r i)
+  #:transparent
+  #:guard (λ (r i n)
+            (unless (or (register? r) (label? r))
+              (error n "expects register or label as first argument; given ~v" r))
+            (unless (exact-integer? i)
+              (error n "expects exact integer as second argument; given ~v" i))
+            (values r i)))
 (provide offset offset?)
 (define (offset r [i 0]) (Offset r i))
 (define offset? Offset?)
@@ -188,6 +197,7 @@
 (provide label?)
 (define (label? l)
   (and (symbol? l)
+       (nasm-label? l)
        (not (register? l))))
 
 (provide label-type?)
@@ -272,3 +282,78 @@
     [(_ (~optional (~seq #:entry-point entry-point) #:defaults ([entry-point #'#f]))
         instruction ...+)
      #'(initialize-program (list instruction ...) entry-point)]))
+
+(provide prog)
+;; (U Instruction Asm) ... -> Asm
+;; Construct a "program", does some global well-formedness checking to help
+;; prevent confusing error messages as the nasm level
+(define (prog . xs)
+  (let ((p (apply sequence xs)))
+    (check-unique-label-decls p)
+    (check-label-targets-declared p)
+    (check-has-initial-label p)
+    ;; anything else?
+    p))
+
+;; Asm -> Void
+(define (check-unique-label-decls xs)
+  (let ((r (check-duplicates (label-decls xs))))
+    (when r
+      (error 'prog "duplicate label declaration found: ~v" r))))
+
+;; Asm -> (Listof Symbol)
+;; Compute all declared label names
+(define (label-decls asm)
+  (match asm
+    ['() '()]
+    [(cons (Label s) asm)
+     (cons s (label-decls asm))]
+    [(cons (Extern s) asm)
+     (cons s (label-decls asm))]
+    [(cons _ asm)
+     (label-decls asm)]))
+
+;; Symbol -> Boolean
+(define (nasm-label? s)
+  (regexp-match #rx"^[a-zA-Z._?][a-zA-Z0-9_$#@~.?]*$" (symbol->string s)))
+
+;; Asm -> (Listof Symbol)
+;; Compute all uses of label names
+(define (label-uses asm)
+  (match asm
+    ['() '()]
+    [(cons (Jmp (? label? s)) asm)
+     (cons s (label-uses asm))]
+    [(cons (Je (? label? s)) asm)
+     (cons s (label-uses asm))]
+    [(cons (Jne (? label? s)) asm)
+     (cons s (label-uses asm))]
+    [(cons (Jg (? label? s)) asm)
+     (cons s (label-uses asm))]
+    [(cons (Jge (? label? s)) asm)
+     (cons s (label-uses asm))]
+    [(cons (Jl (? label? s)) asm)
+     (cons s (label-uses asm))]
+    [(cons (Jle (? label? s)) asm)
+     (cons s (label-uses asm))]
+    [(cons (Call (? label? s)) asm)
+     (cons s (label-uses asm))]
+    [(cons (Lea _ (? label? s)) asm)
+     (cons s (label-uses asm))]
+    [(cons _ asm)
+     (label-uses asm)]))
+
+
+;; Asm -> Void
+(define (check-label-targets-declared asm)
+  (let ((ds (apply set (label-decls asm)))
+        (us (apply set (label-uses asm))))
+
+    (let ((undeclared (set-subtract us ds)))
+      (unless (set-empty? undeclared)
+        (error 'prog "undeclared labels found: ~v" (set->list undeclared))))))
+
+;; Asm -> Void
+(define (check-has-initial-label asm)
+  (unless (findf Label? asm)
+    (error 'prog "no initial label found")))
