@@ -1,7 +1,6 @@
 #lang racket
 
 (require "registers.rkt"
-
          (for-syntax syntax/parse
                      racket/syntax))
 
@@ -12,13 +11,11 @@
          min-signed
          max-unsigned
          min-unsigned
-         make-empty-bytes
-         sign
-         integer->signed
-         integer->unsigned
-         mask
-         make-full-mask
+         sign-mask
+         truncate-integer/signed
+         truncate-integer/unsigned
          unsigned-in-bounds?
+         make-mask
          a86:add
          a86:sub
          a86:and
@@ -69,53 +66,50 @@
        [(or 'hexadecimal 'hex 'h)
         (~r value #:base 16 #:min-width word-size-bytes #:pad-string "0")])]))
 
-
 ;; Maximum and minimum values for signed and unsigned representations.
-(define (max-signed) (sub1 (arithmetic-shift 1 (sub1 word-size-bits))))
-(define (min-signed) (arithmetic-shift 1 (sub1 word-size-bits)))
-(define (max-unsigned) (sub1 (arithmetic-shift 1 word-size-bits)))
-(define (min-unsigned) 0)
+;; max-signed:   011...
+;; min-signed:   100...
+;; max-unsigned: 111...
+;; min-unsigned: 000...
+(define max-signed   (sub1 (arithmetic-shift 1 (sub1 word-size-bits))))
+(define min-signed         (arithmetic-shift 1 (sub1 word-size-bits)))
+(define max-unsigned (sub1 (arithmetic-shift 1       word-size-bits)))
+(define min-unsigned 0)
 
-;; Produces an empty set of bytes.
-(define (make-empty-bytes) (bytes->immutable-bytes (make-bytes word-size-bytes 0)))
+;; A mask for the sign bit. (This is equivalent to the smallest signed value.)
+(define sign-mask min-signed)
 
-;; A mask for the sign bit.
-(define (sign) (arithmetic-shift 1 (sub1 word-size-bits)))
-
-;; Converts an unsigned integer representation to its signed representation.
-(define (integer->signed n)
-  (let ([sign (sign)])
-    (- (bitwise-and n (sub1 sign))
-       (bitwise-and n sign))))
+;; Truncates a Racket integer for use in the machine as a signed integer. The
+;; operation preserves the sign of the input.
+(define (truncate-integer/signed n)
+  (bitwise-ior (bitwise-and n max-signed)
+               (bitwise-and n sign-mask)))
 
 ;; Converts a signed integer representation to its unsigned representation.
-(define (integer->unsigned n)
-  (let ([sign (sign)]
-        [signed (integer->signed n)])
-    (bitwise-ior (bitwise-and n (sub1 sign))
-                 (bitwise-and signed sign))))
+;; Truncates a Racket integer for use in the machine as an unsigned integer.
+(define (truncate-integer/unsigned n)
+  (bitwise-and n max-unsigned))
 
-;; Masks a number such that its value is truncated to only the bits supported
-;; with the current word size.
-(define (mask n)
-  (bitwise-and (integer->unsigned n)
-               (sub1 (arithmetic-shift 1 word-size-bits))))
-
-;; Constructs a bit-mask. If [n] is non-negative, the mask is constructed
-;; starting from the least-significant bit. If [n] is negative, the mask is
-;; constructed starting from the most-significant bit.
-(define (make-full-mask n)
-  (if (>= n 0)
-      ;; Mask from the least-significant bits.
-      (sub1 (arithmetic-shift 1 n))
-      (bitwise-xor (max-unsigned)
-                   (sub1 (arithmetic-shift 1 (- word-size-bits
-                                                (- n)))))))
+;; Determines whether masking the signed representation of a number loses any
+;; information.
+(define (signed-in-bounds? n)
+  (= n (truncate-integer/signed n)))
 
 ;; Determines whether masking the unsigned representation of a number loses any
 ;; information.
 (define (unsigned-in-bounds? n)
-  (= n (mask n)))
+  (= n (truncate-integer/unsigned n)))
+
+;; Constructs a bit-mask. If [n] is non-negative, the mask is constructed
+;; starting from the least-significant bit. If [n] is negative, the mask is
+;; constructed starting from the most-significant bit.
+(define (make-mask n)
+  (if (>= n 0)
+      ;; Mask from the least-significant bits.
+      (sub1 (arithmetic-shift 1 n))
+      (bitwise-xor max-unsigned
+                   (sub1 (arithmetic-shift 1 (- word-size-bits
+                                                (- n)))))))
 
 ;; Provides a form for defining new binary instructions, such as Add and Sub.
 (define-syntax (define-binary-instruction stx)
@@ -139,11 +133,10 @@
              (raise-user-error 'func-name "first argument not within word size bounds: ~a" arg1))
            (unless (unsigned-in-bounds? arg2)
              (raise-user-error 'func-name "second argument not within word size bounds: ~a" arg2))
-           (let* ([sign-mask (sign)]
-                  [arg1-sign (bitwise-and sign-mask arg1)]
+           (let* ([arg1-sign (bitwise-and sign-mask arg1)]
                   [arg2-sign (bitwise-and sign-mask arg2)]
                   [base-result base-computation]
-                  [masked-result (mask base-result)]
+                  [masked-result (truncate-integer/unsigned base-result)]
                   [masked-result-sign (bitwise-and sign-mask masked-result)]
                   [set-overflow? (~? (~@ overflow-computation)
                                      (~@ #f))]

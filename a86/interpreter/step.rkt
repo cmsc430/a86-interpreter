@@ -40,7 +40,7 @@
                  (cond
                    [(and (interpretation-matches? 'integer)
                          (integer? arg))
-                    (integer->unsigned arg)]
+                    (truncate-integer/unsigned arg)]
                    [(and (interpretation-matches? 'register)
                          (register? arg))
                     (hash-ref registers arg)]
@@ -181,13 +181,13 @@
             ;;
             ;; NOTE: It is assumed that [i] must be on [0, word-size-bits - 1].
             (let* ([base (process-argument dst #:as 'register)]
-                   [shifted (mask (arithmetic-shift base i))]
+                   [shifted (truncate-integer/unsigned (arithmetic-shift base i))]
                    [new-registers (hash-set registers dst shifted)]
                    [set-carry? (not (= 0 (bitwise-and (arithmetic-shift (arithmetic-shift 1 word-size-bits) (- i))
                                                       base)))]
                    [set-overflow? (and (= 1 i)
-                                       (not (or (and      set-carry?  (not (= 0 (bitwise-and (sign) shifted))))
-                                                (and (not set-carry?)      (= 0 (bitwise-and (sign) shifted))))))]
+                                       (not (or (and      set-carry?  (not (= 0 (bitwise-and sign-mask shifted))))
+                                                (and (not set-carry?)      (= 0 (bitwise-and sign-mask shifted))))))]
                    [new-flags (make-new-flags #:overflow set-overflow? #:carry set-carry?)])
               (make-state #:with-registers new-registers
                           #:with-flags new-flags))]
@@ -196,10 +196,10 @@
             ;;
             ;; NOTE: It is assumed that [i] must be on [0, word-size-bits - 1].
             (let* ([base (process-argument dst #:as 'register)]
-                   [msb? (not (= 0 (bitwise-and (sign) base)))]
+                   [msb? (not (= 0 (bitwise-and sign-mask base)))]
                    [shifted (arithmetic-shift base (- i))]
                    [masked (if msb?
-                               (bitwise-ior shifted (make-full-mask (- i)))
+                               (bitwise-ior shifted (make-mask (- i)))
                                shifted)]
                    [new-registers (hash-set registers dst masked)]
                    [set-carry? (not (= 0 (bitwise-and (arithmetic-shift 1 (- i 1))
