@@ -1,6 +1,6 @@
 #lang racket
 
-(require "../ast.rkt"
+(require "ast.rkt"
          "memory.rkt"
          "registers.rkt"
          "utility.rkt")

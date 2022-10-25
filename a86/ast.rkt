@@ -1,7 +1,7 @@
 #lang racket
 
-(require "interpreter/registers.rkt"
-         "interpreter/utility.rkt"
+(require "registers.rkt"
+         "utility.rkt"
          racket/set
          (for-syntax syntax/parse))
 
