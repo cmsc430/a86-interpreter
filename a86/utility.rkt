@@ -1,9 +1,5 @@
 #lang racket
 
-(require "registers.rkt"
-         (for-syntax syntax/parse
-                     racket/syntax))
-
 (provide word-size-bytes
          word-size-bits
          format-word
@@ -11,70 +7,64 @@
          min-signed
          max-unsigned
          min-unsigned
+         a86-value?
+         address?
          sign-mask
          truncate-integer/signed
          truncate-integer/unsigned
          unsigned-in-bounds?
          make-mask
-         a86:add
-         a86:sub
-         a86:and
-         a86:ior
-         a86:xor
-         word-aligned-offset
-         previous-word-aligned-address
-         next-word-aligned-address
          align-address-to-word
+         word-aligned-offset
+         greater-word-aligned-address
+         lesser-word-aligned-address
          aligned-to-word?
          sequence)
 
-;; The size of words, given in bytes.
+;; The size of words, given in bytes.  This language is defined only for 64-bit
+;; architectures, so we use 8-byte words.
 (define word-size-bytes 8)
 ;; The size of words, given in bits.
 (define word-size-bits (* 8 word-size-bytes))
 
-;; Given either an integer or a byte string, returns a string representing that
-;; value in either binary or hexadecimal.
+;; Given an integer?, returns a string representing that value in either binary
+;; or hexadecimal.
 ;;
 ;;   mode:
 ;;       determines how to format the value; accepted formats are
 ;;           'binary OR 'bin OR 'b      - binary formatting
 ;;           'hexadecimal OR 'hex OR 'h - hexadecimal formatting
 (define (format-word value [mode 'binary])
-  (cond
-    [(bytes? value)
-     (unless (= (bytes-length value) word-size-bytes)
-       (raise-user-error 'format-word
-                         "given byte string contains ~a bytes; expected ~a"
-                         (bytes-length value)
-                         word-size-bytes))
-     (apply string-append
-            (map (λ (b) (format-word b mode 1))
-                 (bytes->list value)))]
-    [(integer? value)
-     (unless (>= value 0)
-       (raise-user-error 'format-word
-                         "given negative integer ~a"
-                         value))
-     (unless (<= value (sub1 (expt 2 (* 8 word-size-bytes))))
-       (raise-user-error 'format-word
-                         "given too-large integer ~a"
-                         value))
-     (match mode
-       [(or 'binary 'bin 'b)
-        (~r value #:base 2 #:min-width word-size-bits #:pad-string "0")]
-       [(or 'hexadecimal 'hex 'h)
-        (~r value #:base 16 #:min-width word-size-bytes #:pad-string "0")])]))
+  (match mode
+    [(or 'binary 'bin 'b)
+     (~r value #:base 2 #:min-width word-size-bits #:pad-string "0")]
+    [(or 'hexadecimal 'hex 'h)
+     (~r value #:base 16 #:min-width word-size-bytes #:pad-string "0")]))
 
 ;; Maximum and minimum values for signed and unsigned representations.
 ;; max-signed:   011...
 ;; min-signed:   100...
 ;; max-unsigned: 111...
-;; min-unsigned: 000...
+1;; min-unsigned: 000...
 (define max-signed   (sub1 (arithmetic-shift 1 (sub1 word-size-bits))))
 (define min-signed         (arithmetic-shift 1 (sub1 word-size-bits)))
 (define max-unsigned (sub1 (arithmetic-shift 1       word-size-bits)))
 (define min-unsigned 0)
+
+;; Values are integers that exist either in the signed or unsigned ranges.
+(define (a86-value? x)
+  (and (integer? x)
+       (or (and (negative? x)
+                (>= x min-signed)
+                (<= x max-signed))
+           (and (>= x min-unsigned)
+                (<= x max-unsigned)))))
+
+;; Addresses can be any unsigned integer values.
+(define (address? x)
+  (and (integer? x)
+       (>= x min-unsigned)
+       (<= x max-unsigned)))
 
 ;; A mask for the sign bit. (This is equivalent to the smallest signed value.)
 (define sign-mask min-signed)
@@ -111,106 +101,26 @@
                    (sub1 (arithmetic-shift 1 (- word-size-bits
                                                 (- n)))))))
 
-;; Provides a form for defining new binary instructions, such as Add and Sub.
-(define-syntax (define-binary-instruction stx)
-  (syntax-parse stx
-    [(_ (name arg1 arg2)
-        (~seq #:base-computation base-computation)
-        (~optional (~seq #:result-name result-name)
-                   #:defaults ([result-name #'value]))
-        (~optional (~seq #:overflow-computation overflow-computation))
-        (~optional (~seq #:sign-computation sign-computation))
-        (~optional (~seq #:zero-computation zero-computation))
-        (~optional (~seq #:carry-computation carry-computation)))
-     (with-syntax ([func-name (format-id #'name #:source #'name "a86:~a" (syntax-e #'name))]
-                   [base-result (format-id #'result-name "base-~a" (syntax-e #'result-name))]
-                   [masked-result (format-id #'result-name "masked-~a" (syntax-e #'result-name))]
-                   [masked-result-sign (format-id #'result-name "masked-~a-sign" (syntax-e #'result-name))]
-                   [arg1-sign (format-id #'arg1 "~a-sign" (syntax-e #'arg1))]
-                   [arg2-sign (format-id #'arg1 "~a-sign" (syntax-e #'arg2))])
-       #'(define (func-name arg1 arg2)
-           (unless (unsigned-in-bounds? arg1)
-             (raise-user-error 'func-name "first argument not within word size bounds: ~a" arg1))
-           (unless (unsigned-in-bounds? arg2)
-             (raise-user-error 'func-name "second argument not within word size bounds: ~a" arg2))
-           (let* ([arg1-sign (bitwise-and sign-mask arg1)]
-                  [arg2-sign (bitwise-and sign-mask arg2)]
-                  [base-result base-computation]
-                  [masked-result (truncate-integer/unsigned base-result)]
-                  [masked-result-sign (bitwise-and sign-mask masked-result)]
-                  [set-overflow? (~? (~@ overflow-computation)
-                                     (~@ #f))]
-                  [set-sign? (~? (~@ sign-computation)
-                                 (~@ (not (= 0 masked-result-sign))))]
-                  [set-zero? (~? (~@ zero-computation)
-                                 (~@ (= 0 masked-result)))]
-                  [set-carry? (~? (~@ carry-computation)
-                                  (~@ (= 0 (bitwise-and base-result
-                                                        (arithmetic-shift 1 word-size-bits)))))]
-                  [flags (make-new-flags #:overflow set-overflow?
-                                         #:sign set-sign?
-                                         #:zero set-zero?
-                                         #:carry set-carry?)])
-             (values masked-result flags))))]))
-
-;; Given two integers, calculates their sum. Returns the sum along with a new
-;; set of flags.
-(define-binary-instruction (add a1 a2)
-  #:base-computation (+ a1 a2)
-  #:result-name sum
-  #:overflow-computation (and (= a1-sign a2-sign)
-                              (not (= a1-sign masked-sum-sign))))
-
-;; Given two integers, calculates their difference. Returns the difference along
-;; with a new set of flags.
-(define-binary-instruction (sub a1 a2)
-  #:base-computation (- a1 a2)
-  #:result-name diff
-  #:overflow-computation (or (and (= 0 a1-sign)
-                                  (not (= 0 a2-sign))
-                                  (not (= 0 masked-diff-sign)))
-                             (and (not (= 0 a1-sign))
-                                  (= 0 a2-sign)
-                                  (= 0 masked-diff-sign))))
-
-;; Given two integers, calculates their bitwise conjunction. Returns the result
-;; along with a new set of flags.
-(define-binary-instruction (and a1 a2)
-  #:base-computation (bitwise-and a1 a2)
-  #:carry-computation #f)
-
-;; Given two integers, calculates their bitwise inclusive disjunction. Returns
-;; the result along with a new set of flags.
-(define-binary-instruction (ior a1 a2)
-  #:base-computation (bitwise-ior a1 a2)
-  #:carry-computation #f)
-
-;; Given two integers, calculates their bitwise exclusive disjunction. Returns
-;; the result along with a new set of flags.
-(define-binary-instruction (xor a1 a2)
-  #:base-computation (bitwise-xor a1 a2)
-  #:carry-computation #f)
-
-;; Given an address, produces the word-aligned address that is [offset-in-words]
-;; words lower than the given' address word-aligned address.
-(define (word-aligned-offset address offset-in-words)
-  (- (align-address-to-word address) (* word-size-bytes offset-in-words)))
-
-;; Given an address, produces the previous word-aligned address from the given
-;; address's word-aligned address.
-(define (previous-word-aligned-address address)
-  (word-aligned-offset address -1))
-
-;; Given an address, produces the next word-aligned address from the given
-;; address's word-aligned address.
-(define (next-word-aligned-address address)
-  (word-aligned-offset address 1))
-
 ;; Given an address, produces the next lowest word-aligned address, according to
 ;; the value of [word-size-bytes]. If the given address is word-aligned, it is
 ;; returned unchanged.
 (define (align-address-to-word address)
   (- address (modulo address word-size-bytes)))
+
+;; Given an address, produces the word-aligned address that is [offset-in-words]
+;; words lower than the given' address word-aligned address.
+(define (word-aligned-offset address offset-in-words)
+  (+ (align-address-to-word address) (* word-size-bytes offset-in-words)))
+
+;; Given an address, produces the previous word-aligned address from the given
+;; address's word-aligned address.
+(define (greater-word-aligned-address address)
+  (word-aligned-offset address 1))
+
+;; Given an address, produces the next word-aligned address from the given
+;; address's word-aligned address.
+(define (lesser-word-aligned-address address)
+  (word-aligned-offset address -1))
 
 ;; Determines whether an address is properly word-aligned, according to the
 ;; value of [word-size-bytes].

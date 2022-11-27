@@ -124,9 +124,11 @@
                   [(struct Name (arg ...)) 'Name] ...)))]))
 
 (define-instructions
-  ;; Separate the input.
+  ;; Separate the input by section.
   (Text   ())
   (Data   ())
+  (Rodata ())
+  (Bss    ())
   ;; Distinguish a subset of instructions.
   (Label  (x)       check:label-symbol)
   (Global (x)       check:label-symbol)
@@ -159,7 +161,8 @@
   (Dd     (x))   ;; Define Double word.
   (Dq     (x)))  ;; Define Quad word.
 
-;; TODO: What is this? Is it necessary?
+;; This is used for the Lea instruction, which allows for addition in the
+;; second operand.
 (provide (struct-out Plus))
 (struct Plus (e1 e2) #:transparent)
 
@@ -293,6 +296,7 @@
     (check-label-targets-declared p)
     (check-has-initial-label p)
     ;; anything else?
+    ;; TODO: data/text distinction
     p))
 
 ;; Asm -> Void

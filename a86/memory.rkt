@@ -1,369 +1,424 @@
 #lang racket
 
-(require "utility.rkt"
-         data/gvector
-         (for-syntax syntax/parse))
+;; Memory Representation
+;;
+;; We adopt some arbitrary conventions to simulate (in some sense) the typical
+;; memory schema seen in x86-64 machines. This module provides an API through
+;; which this representation can be built and used.
+;;
+;; The memory layout looks like this:
+;;
+;; #xfffffffffffffff8  +----------------+
+;;                     |XXXXXXXXXXXXXXXX|
+;;                     |XXXXXXXXXXXXXXXX|
+;;                     |XXXXXXXXXXXXXXXX|
+;;                     |XXXXXXXXXXXXXXXX|
+;;                     |XXXXXXXXXXXXXXXX|
+;; #x00007ffffffffff8  +================+
+;;                     |                |
+;;                     |     Stack      |
+;;                     |                |
+;;                     +~~~~~~~~~~~~~~~~+
+;;                     //              //
+;;                     +~~~~~~~~~~~~~~~~+
+;;                     |                |
+;;                     |      Heap      |
+;;                     |                |
+;;                     +----------------+
+;;                     |      BSS       |
+;;                     +----------------+
+;;                     |      Data      |
+;;                     +----------------+
+;;                     |     Rodata     |
+;;                     +----------------+
+;;                     |      Text      |
+;; #x0000000004000000  +================+
+;;                     |XXXXXXXXXXXXXXXX|
+;; #x0000000000000000  +----------------+
+;;
+;; Some addresses are rendered inaccessible to simulate kernel space or other
+;; regions of memory that do not belong to the running program.
+;;
+;; The Text, Rodata, Data, and BSS sections are initialized to exactly as much
+;; space as they need to store the program instructions, the read-only static
+;; data, the initialized writable static data, and the uninitialized writable
+;; static data, respectively.
+;;
+;; The Heap and Stack sections are initialized with zeroes. The Heap grows
+;; upwards from the top of the last static section, and the Stack grows
+;; downwards from the highest allowed address.
+;;
+;; Although x86 memory is byte-addressable, our simulation only handles words.
+;; It is recommended that clients of this API align addresses to words to ensure
+;; proper function.
 
-(provide (all-defined-out)
-         (struct-out Memory))
-
-(provide initialize-memory
+(provide text rodata data bss heap stack
+         read-only-sections
+         read-write-sections
+         static-sections
+         dynamic-sections
+         downward-sections
+         upward-sections
+         handling-strategy-limited
+         handling-strategy-rotating
+         handling-strategy-unlimited
+         handling-strategy
+         max-cell-depth
+         make-memory
          memory-ref
-         memory-depth
-         at-max-depth?
-         specialized-initial-value?
-         initialized?
          memory-set!
-         unsafe-memory-set!
-         valid-address?
-         memory-map
-         memory-filter
-         memory-fold)
+         section->range
+         debug-instructions)
 
-(struct address-stream (hi-addr lo-addr)
-  #:guard (λ (ha la _)
-            ;; TODO: Add checks to ensure the stream will behave well.
-            (values (align-address-to-word ha)
-                    (align-address-to-word la)))
-  #:methods gen:stream
-  [(define (stream-empty? stream)
-     (= (align-address-to-word (address-stream-hi-addr stream))
-        (align-address-to-word (address-stream-lo-addr stream))))
-   (define (stream-first stream)
-     (address-stream-hi-addr stream))
-   (define (stream-rest stream)
-     (address-stream (next-word-aligned-address (address-stream-hi-addr stream))
-                     (address-stream-lo-addr stream)))])
+(module sections racket
+  ;; A section is a light wrapper around a vector. Sections have a maximum size,
+  ;; but their internal vectors can be smaller than that. Writes to indices
+  ;; outside the bounds of the internal vector but within the maximum size
+  ;; result in a resizing of the internal vector.
+  ;;
+  ;; Sections also handle logic related to the specific internal memory model we
+  ;; adapt for the interpreter. Specifically, we want interpreter memory to have
+  ;; memory itself, i.e., we would like to be able to search backward through
+  ;; the write history of an address to aid in debugging. To support this,
+  ;; insertions into sections record an interpreter time-tick associated with
+  ;; the write. A given memory address will have record of its past writes and
+  ;; their time ticks.
+  ;;
+  ;; However, storing arbitrarily many such time tick/value pairs could pose a
+  ;; problem of efficiency. Sectors therefore support three different memory
+  ;; handling strategies to address this:
+  ;;
+  ;;   limited    each address in writable memory can be written to only so many
+  ;;              times, after which an error is raised
+  ;;
+  ;;   rotating   each address in writable memory can be written to only so many
+  ;;              times, after which the oldest values are dropped in favor of
+  ;;              keeping the newer values
+  ;;
+  ;;   unlimited  no bound on the amount of times a specific address can be
+  ;;              written to
+  ;;
+  ;; The default handling strategy is [rotating], with a default maximum memory
+  ;; depth of [10] cells.
 
-;; A pair of a time tick with a value.
-;; TODO: Remove transparency?
-(struct Cell (tick value) #:transparent)
+  (provide handling-strategy-limited
+           handling-strategy-rotating
+           handling-strategy-unlimited
+           handling-strategy
+           max-cell-depth
+           make-section
+           section-ref
+           section-set!)
 
-;; A representation of runtime memory.
-;;
-;;   max-address:
-;;       The highest address available.
-;;
-;;   min-address:
-;;       The lowest address available.
-;;
-;;   last-instruction-address:
-;;       The address of the last instruction pre-loaded into memory.
-;;
-;;   memhash:
-;;       A mutable hashmap from addresses to immutable vectors of Cells.
-;;
-;;   initialized-addresses:
-;;       A growable vector of addresses that have been initialized, in memory
-;;       order (i.e., from high to low).
-;;
-;;   handling:
-;;       One of the memory handling strategies.
-;;
-;;   max-depth:
-;;       The maximum depth to be used if a non-unlimited strategy is employed.
-;;
-;;   error-on-overwrite:
-;;       Whether to prevent attempts by [memory-set!] to overwrite addresses
-;;       that were specially initialized.
-;;
-;; TODO: Remove transparency?
+  ;; Memory depth is limited; when exhausted, errors are raised.
+  (define handling-strategy-limited 'limited)
+  ;; Memory depth is limited; when exhausted, oldest values are dropped.
+  (define handling-strategy-rotating 'rotating)
+  ;; No limit on the depth of memory.
+  (define handling-strategy-unlimited 'unlimited)
+  ;; The current memory handling strategy.
+  (define handling-strategy (make-parameter handling-strategy-rotating))
+  ;; The maximum cell depth.
+  (define max-cell-depth (make-parameter 10))
 
-(struct Memory (max-address
-                min-address
-                last-instruction-address
-                memhash
-                initialized-addresses
-                handling
-                max-depth
-                error-on-overwrite)
-  #:transparent)
+  ;; A pair of a time tick with a value. These are used for keeping track of
+  ;; "when" a value was introduced to the machine.
+  (struct Cell (tick value))
 
-;; The supported memory handling strategies.
-(define handling-strategy-unlimited 'unlimited)
-(define handling-strategy-limited 'limited)
-(define handling-strategy-rotating 'rotating)
+  ;; A section simply contains a vector of vectors of cells, and has a maximum
+  ;; supported size. The contents vector is automatically resized to accommodate
+  ;; writes that need it, up to the maximum size.
+  (struct Section ([contents #:mutable]
+                   max-size))
 
-;; Defines the maximum amount of values a Cell will hold.
-(define max-cell-depth 10)
+  ;; Initializes a section from a given list of [contents]. The maximum size
+  ;; specifies how large the section may be. If the [max-size] is left as [#f],
+  ;; the section is only allowed to be as large as its initial [contents].
+  (define (make-section contents [max-size #f])
+    (Section (if (vector? contents)
+                 contents
+                 (apply vector (map (λ (v) (vector-immutable (Cell 0 v))) contents)))
+             (or max-size (length contents))))
 
-;; Sets up the memory to be used during emulation. All arguments except the list
-;; of instructions are optional. The instruction list must be non-empty.
-;;
-;; Returns three values: the first word-aligned address, the word-aligned
-;; address of the last instruction, and a [Memory] struct that should be passed
-;; to all the memory-related functions.
-;;
-;;   instructions:
-;;       A list of instructions to include in the initial (highest) memory
-;;       addresses. Anything given in this list will be written without first
-;;       checking if the value is an [integer?].
-;;
-;;   max-address:
-;;       The highest address available. This is the "first" address to be used,
-;;       rounded down to the nearest word boundary.
-;;
-;;       default: [(align-address-to-word #xffffffffffffffff)]
-;;
-;;   min-address:
-;;       The lowest address available. Memory cannot be written beyond this.
-;;
-;;       default: [#xffff800000000000]
-;;
-;;   handling-strategy:
-;;       Memory can be set up to only allow a specific number of writes to a
-;;       given address in memory. This is to help with performance, since old
-;;       (overwritten) values can be kept around to help with debugging. The
-;;       possible options are:
-;;           'unlimited - there is no bound on the number of writes
-;;           'limited   - only [max-depth] writes are allowed, after which an
-;;                        error will be raised
-;;           'rotating  - the address's history is treated as a rotating buffer
-;;                        with only [max-depth] entries, meaning once
-;;                        [max-depth] writes are performed, new writes will
-;;                        "push out" the oldest entries
-;;
-;;       default: [handling-strategy-unlimited]
-;;
-;;   max-depth:
-;;       The maximum amount of writes to allow, depending on the
-;;       [handling-strategy] being used.
-;;
-;;       default: [max-cell-depth]
-;;
-;;   error-on-initialized-overwrite:
-;;       Whether to throw errors when attempting to overwrite memory that was
-;;       allocated during initialization.
-;;
-;;       default: [#t]
-(define (initialize-memory instructions
-                           [max-address (align-address-to-word #xffffffffffffffff)]
-                           [min-address #xffff800000000000]
-                           [handling-strategy handling-strategy-unlimited]
-                           [max-depth max-cell-depth]
-                           [error-on-initialized-overwrite #t])
-  (when (empty? instructions)
-    (raise-user-error 'initialize-memory "instruction list must be non-empty"))
-  (let* ([first-address (align-address-to-word max-address)]
-         [address-instruction-pairs
-          (for/fold ([address first-address]
-                     [address-instruction-pairs (list)]
-                     #:result address-instruction-pairs)
-                    ([instruction instructions])
-            (values (next-word-aligned-address address)
-                    (cons (cons address (vector-immutable (Cell 0 instruction)))
-                          address-instruction-pairs)))]
-         [last-address (or (car (car address-instruction-pairs))
-                           first-address)])
-    (values first-address
-            last-address
-            (Memory max-address
-                    min-address
-                    last-address
-                    (make-hash address-instruction-pairs)
-                    (list->gvector (reverse (map car address-instruction-pairs)))
-                    handling-strategy
-                    max-depth
-                    error-on-initialized-overwrite))))
+  (define (internal:section-ref contents index)
+    (and (< index (vector-length contents))
+         (vector-ref contents index)))
 
-;; Retrieves the value stored at the indicated address. If no value is present
-;; in the hash table, the result of [(failure-result)] is returned, representing
-;; what would be expected if our memory was not being emulated. By default, the
-;; [failure-result] function produces [0].
-(define (memory-ref memory address [failure-result (λ () 0)])
-  (let ([result (hash-ref (Memory-memhash memory)
-                          address
-                          #f)])
-    (if result
-        (Cell-value (vector-ref result 0))
-        (failure-result))))
+  ;; Accesses an index within a section. It is assumed that the index lies
+  ;; within the section's maximum bounds. If the access fails, [failure-result]
+  ;; is applied (if it is a procedure) or returned (if it is not).
+  ;;
+  ;; NOTE: [section-ref] is part of the external API for sections, so it
+  ;; retrieves the most recently stored value at the indicated index.
+  (define (section-ref section index [failure-result 0])
+    (let* ([contents (Section-contents section)]
+           [cells (internal:section-ref contents index)])
+      (if cells
+          (Cell-value (vector-ref cells 0))
+          (if (procedure? failure-result)
+              (failure-result)
+              failure-result))))
 
-;; Returns the number of times the indicated address has been written to.
-(define (memory-depth memory address)
-  (vector-length (hash-ref (Memory-memhash memory)
-                           address
-                           (vector-immutable))))
+  (define (internal:section-set! section index cell)
+    (let* ([contents (Section-contents section)]
+           [curr-size (vector-length contents)])
+      (if (>= index curr-size)
+          (let ([new-size (min (let next-size ([size curr-size])
+                                 (if (>= index size)
+                                     (next-size (* 2 size))
+                                     size))
+                               (Section-max-size section))])
+            (if (>= index new-size)
+                (error 'section-set!
+                       "index beyond maximum section size: ~v"
+                       index)
+                (let ([new-contents (make-vector new-size #f)])
+                  (vector-copy! new-contents
+                                0
+                                contents)
+                  (set-Section-contents! section new-contents)))
+            (internal:section-set! section index cell))
+          (let ([max-depth (max-cell-depth)]
+                [handling (handling-strategy)])
+            (match (internal:section-ref contents index)
+              [#f (vector-set! contents index (vector-immutable cell))]
+              [(vector cells ...)
+               #:when (and (>= (length cells) max-depth)
+                           (eq? handling handling-strategy-limited))
+               (error 'section-set!
+                      "index ~v cannot be written to more than ~v times"
+                      index
+                      max-depth)]
+              [(vector cells ... _last-cell)
+               #:when (and (>= (add1 (length cells)) max-depth)
+                           (eq? handling handling-strategy-rotating))
+               (vector-set! contents index
+                            (apply vector-immutable
+                                   cell
+                                   cells))]
+              [(vector cells ...)
+               (vector-set! contents index
+                            (apply vector-immutable
+                                   cell
+                                   cells))])))))
 
-;; Determines whether the indicated address has been written to the maximum
-;; number of times.
-(define (at-max-depth? memory address)
-  (let ([handling (Memory-handling memory)])
-    (and (not (eq? handling handling-strategy-unlimited))
-         (or (eq? handling handling-strategy-limited)
-             (eq? handling handling-strategy-rotating))
-         (>= (memory-depth memory address)
-             (Memory-max-depth memory)))))
+  ;; Writes to an index within a section. It is assumed that the index lies
+  ;; within the section's maximum bounds.
+  ;;
+  ;; If the index lies outside the internal [contents] vector, the [contents]
+  ;; will be resized to accommodate, up to the maximum size allowed.
+  (define (section-set! section index tick value)
+    (internal:section-set! section index (Cell tick value))))
 
-;; Determines whether the indicated address holds a special initialized value.
-;; Since instructions are written into memory during memory initialization, this
-;; is a way to check if the address is holding an instruction.
+(require 'sections
+         "debug.rkt"
+         "utility.rkt")
+
+;; The memory struct abstracts over the address ranges and sections.
 ;;
-;; TODO: Rename.
-(define (specialized-initial-value? memory address)
-  (>= address (Memory-last-instruction-address memory)))
-
-;; Determines whether the indicated address actually holds a value.
+;;   ranges->sections:  An association list mapping address ranges to name-
+;;                      section pairs. An example might be:
 ;;
-;; TODO: Rename for clarity.
-;; FIXME: Doesn't this always return [#t]???
-(define (initialized? memory address)
-  (or (memory-ref memory address #f)
-      #t))
+;;                      (list (list (cons    0    8)  'text #<Section>)
+;;                            (list (cons   16   48)  'data #<Section>)
+;;                            (list (cons   56  856)  'heap #<Section>)
+;;                            (list (cons 1920 2040) 'stack #<Section>))
+(struct Memory (ranges->sections) #:transparent)
 
-;; Stores the given value (with its corresponding tick) at the indicated address
-;; in memory. This is a stateful action; no value is returned.
+;; These definitions for the section names simply protect against typos when
+;; writing symbols, but we also establish some conventions around the use of
+;; each section:
+;;
+;;                  text  rodata  data  bss  heap  stack
+;;                +--------------------------------------
+;;   writable?    |                x     x    x     x
+;;   static?      |  x     x       x     x
+;;   grows down?  |                                 x
+;;
+;; The below defined lists can be used to dynamically query a given section for
+;; its intended use.
+(define-values (                   text  rodata  data  bss  heap  stack )
+  (values                         'text 'rodata 'data 'bss 'heap 'stack ))
+(define read-only-sections  (list  text  rodata                         ))
+(define read-write-sections (list                data  bss  heap  stack ))
+(define static-sections     (list  text  rodata  data  bss              ))
+(define dynamic-sections    (list                           heap  stack ))
+(define downward-sections   (list                                 stack ))
+(define upward-sections     (list  text  rodata  data  bss  heap        ))
+
+;; Sets up the static sections, which are allocated only enough space to
+;; accommodate their initial contents. Each section is set in memory directly
+;; above the section before it, beginning at the [lo-address].
+;;
+;; Returns two values: the next low address that can be used outside of the
+;; allocated sections, and an association list mapping address ranges to a pair
+;; of the section's name and its corresponding [Section?].
+(define (initialize-static-sections lo-address content-pairs)
+  (for/fold ([lo-address lo-address]
+             [ranges->sections (list)])
+            ([content-pair content-pairs])
+    (match content-pair
+      [(cons name contents)
+       (if (not (empty? contents))
+           (let* ([hi-address (+ lo-address
+                                 (* word-size-bytes
+                                    (sub1 (length contents))))]
+                  [section (make-section contents)]
+                  [address-range (cons lo-address hi-address)])
+             (values (greater-word-aligned-address hi-address)
+                     (cons (cons address-range (cons name section))
+                           ranges->sections)))
+           (values lo-address
+                   ranges->sections))])))
+
+;; Initializes a new memory representation, inserting the indicated values into
+;; the static sections and zeroing-out the dynamic sections.
+;;
+;;   text-contents:       The contents of the Text section.
+;;
+;;                        Default: (list)
+;;
+;;   rodata-contents:     The contents of the Rodata section.
+;;
+;;                        Default: (list)
+;;
+;;   data-contents:       The contents of the Data section.
+;;
+;;                        Default: (list)
+;;
+;;   bss-contents:        The contents of the Bss section.
+;;
+;;                        Default: (list)
+;;
+;;   initial-heap-size:   The initial quantity of words to allocate on the
+;;                        Heap. Note that all of Heap space will still be
+;;                        addressable; this is to allow for minor speed
+;;                        optimizations based on expected program Heap usage.
+;;
+;;                        Default: 2^8 words (arbitrary)
+;;
+;;   max-heap-size:       The maximum number of words that the Heap can use.
+;;
+;;                        Default: 2^11 words (based on macOS default)
+;;
+;;   initial-stack-size:  The initial quantity of words to allocate on the
+;;                        Stack. Note that all of Stack space will still be
+;;                        addressable; this is to allow for minor speed
+;;                        optimizations based on expected program Stack usage.
+;;
+;;                        Default: 2^8 words (arbitrary)
+;;
+;;   max-stack-size:      The maximum number of words that the Stack can use.
+;;
+;;                        Default: 2^20 words (based on macOS default)
+;;
+;;   min-address:         The lowest usable address of program memory.
+;;
+;;                        Default: #x0000000004000000
+;;
+;;   max-address:         The highest usable address of program memory.
+;;
+;;                        Default: #x00007ffffffffff8
+(define (make-memory #:text-contents [text-contents (list)]
+                     #:rodata-contents [rodata-contents (list)]
+                     #:data-contents [data-contents (list)]
+                     #:bss-contents [bss-contents (list)]
+                     #:initial-heap-size [initial-heap-size (expt 2 8)]
+                     #:max-heap-size [max-heap-size (expt 2 11)]
+                     #:initial-stack-size [initial-stack-size (expt 2 8)]
+                     #:max-stack-size [max-stack-size (expt 2 20)]
+                     #:min-address [min-address #x0000000004000000]
+                     #:max-address [max-address #x00007ffffffffff8])
+  (let-values ([(next-address ranges->sections)
+                (initialize-static-sections
+                 min-address
+                 (list (cons text text-contents)
+                       (cons rodata rodata-contents)
+                       (cons data data-contents)
+                       (cons bss bss-contents)))])
+    (let* ([heap-lo-address next-address]
+           [heap-hi-address (+ heap-lo-address
+                               (* word-size-bytes
+                                  (sub1 max-heap-size)))]
+           [heap-range (cons heap-lo-address
+                             heap-hi-address)]
+           [heap-section (make-section (make-list initial-heap-size 0)
+                                       max-heap-size)]
+           [stack-hi-address (align-address-to-word max-address)]
+           [stack-lo-address (- stack-hi-address
+                                (* word-size-bytes
+                                   (sub1 max-stack-size)))]
+           [stack-range (cons stack-lo-address
+                              stack-hi-address)]
+           [stack-section (make-section (make-list initial-stack-size 0)
+                                        max-stack-size)]
+           [ranges->sections (reverse (cons (cons stack-range (cons stack stack-section))
+                                            (cons (cons heap-range (cons heap heap-section))
+                                                  ranges->sections)))])
+      (Memory ranges->sections))))
+
+;; Converts an address into a section and index. If the address does not
+;; correspond to a region of memory governed by a defined section, returns [#f].
+;;
+;; Returns a three-element list containing the name of the section, the
+;; [Section?] struct, and the index into that [Section?]'s contents
+;; corresponding to the given address.
+(define (address->section+index memory address)
+  (match (assoc (align-address-to-word address)
+                (Memory-ranges->sections memory)
+                (λ (address section-range)
+                  (and (>= address (car section-range))
+                       (<= address (cdr section-range)))))
+    [#f #f]
+    [(cons (cons lo-address hi-address) (cons section-name section))
+     (let* ([grows-down? (member section-name downward-sections)]
+            [index-base (if grows-down? hi-address lo-address)]
+            [index (quotient (- (max index-base address)
+                                (min index-base address))
+                             word-size-bytes)])
+       (list section-name section index))]))
+
+;; Performs an address lookup, raising an error (labeled ['segfault]) on
+;; failure. On success, returns the result of [address->section+index].
+(define (address-lookup memory address)
+  (match (address->section+index memory address)
+    [#f (raise-user-error 'segfault "cannot access address ~v" address)]
+    [v v]))
+
+;; Given a [Memory?] and address, looks up the current value stored at that
+;; address in memory. Raises an error if the address cannot be accessed.
+(define (memory-ref memory address)
+  (match (address-lookup memory address)
+    [(list _ section index)
+     (section-ref section index)]))
+
+;; Given a [Memory?], address, time tick, and value, attempts to set the memory
+;; accordingly. Raises an error if the address cannot be accessed, or if the
+;; address belongs to a region of read-only memory.
 (define (memory-set! memory address tick value)
+  (match (address-lookup memory address)
+    [(list name section index)
+     #:when (member name read-write-sections)
+     (section-set! section index tick value)]
+    [(cons name _)
+     (raise-user-error 'segfault "cannot write to address ~v in section ~a" address name)]))
+
+;; Given a [Memory?] and the name of a section, retrieves the corresponding
+;; address range.
+(define (section->range memory section-name)
   (cond
-    [(not (Memory? memory))
-     (raise-user-error 'memory-set! "not memory: ~v" memory)]
-    [(not (integer? value))
-     (raise-user-error 'memory-set! "values to be stored in memory must be integers; got: ~v" value)]
-    [(not (= 0 (arithmetic-shift value (- word-size-bits))))
-     (raise-user-error 'memory-set! "values to be stored in memory must be no larger than ~a bits" word-size-bits)]
-    [(> address (Memory-max-address memory))
-     (raise-user-error 'memory-set! "expected address less than ~a; got ~a" (Memory-max-address memory) address)]
-    [(< address (Memory-min-address memory))
-     (raise-user-error 'memory-set! "expected address greater than ~a; got ~a" (Memory-min-address memory) address)]
-    [(and (specialized-initial-value? memory address)
-          (Memory-error-on-overwrite memory))
-     (raise-user-error 'memory-set!
-                       "cannot overwrite memory initialized with special value ~v at address ~a"
-                       (memory-ref memory address)
-                       address)]
-    [(at-max-depth? memory address)
-     (raise-user-error 'memory-set!
-                       "address ~a has been written to the maximum allowed number of times (~a)"
-                       address
-                       (Memory-max-depth memory))]
-    [(< tick 0)
-     (raise-user-error 'memory-set!
-                       "cannot use time ticks with values less than 0; got ~a" tick)]
-    [else
-     (unsafe-memory-set! memory address tick value)]))
+    [(findf (λ (section-info)
+              (eq? section-name (cadr section-info)))
+            (Memory-ranges->sections memory))
+     => (λ (info) (car info))]
+    [else (raise-user-error 'section->range "undefined section: ~v" section-name)]))
 
-;; The same as [memory-set!], but does not perform any safety checks.
-(define (unsafe-memory-set! memory address tick value)
-  (hash-set! (Memory-memhash memory)
-               address
-               (apply vector-immutable
-                      (cons (Cell tick value)
-                            (vector->list (hash-ref (Memory-memhash memory)
-                                                    address
-                                                    (vector-immutable))))))
-  (unless (initialized? memory address)
-    (insert-address (Memory-initialized-addresses memory)
-                    address)))
-
-;; Inserts a new address into the growable vector containing the initialized
-;; addresses.
-;;
-;; NOTE: It is assumed that the vector's elements are sorted in descending
-;; order, and that no duplicate elements are inserted.
-(define (insert-address gv addr)
-  (let insert ([lo-idx 0]
-               [hi-idx (gvector-count gv)])
-    (cond
-      [(> addr (gvector-ref gv lo-idx))
-       (gvector-insert! gv lo-idx addr)]
-      [(< addr (gvector-ref gv (sub1 hi-idx)))
-       (gvector-insert! gv hi-idx addr)]
-      [else
-       (let ([mid-idx (+ lo-idx (quotient (- hi-idx lo-idx) 2))])
-         (cond
-           [(< addr (gvector-ref gv mid-idx))
-            (insert lo-idx mid-idx)]
-           [else
-            (insert mid-idx hi-idx)]))])))
-
-;; Determines whether a given value can be used as an address in this Memory.
-(define (valid-address? memory address)
-  (and (real? address)
-       (>= (Memory-max-address memory)
-           address
-           (Memory-min-address memory))))
-
-;; Maps over the values contained in memory from [hi-address] to [lo-address].
-;; If either address is left as [#f], the corresponding default from the
-;; [memory] is used.
-;;
-;; NOTE: The [proc] procedure should be a two-argument function that takes in an
-;; address and a corresponding memory value. Most values will be integers, but
-;; be careful if your address range includes any specially initialized memory.
-(define (memory-map proc memory [hi-address #f] [lo-address #f])
-  (unless hi-address
-    (set! hi-address (Memory-max-address memory)))
-  (unless lo-address
-    (set! lo-address (Memory-min-address memory)))
-  (let ([stream (address-stream hi-address lo-address)])
-    (stream->list
-     (stream-map (λ (address)
-                   (proc address
-                         (memory-ref memory address)))
-                 stream))))
-
-;; Filters the values contained in memory from [hi-address] to [lo-address]. If
-;; either address is left as [#f], the corresponding default from the [memory]
-;; is used.
-;;
-;; NOTE: The [pred] predicate should be a two-argument function that takes in an
-;; address and a corresponding memory value and returns a Boolean. Most values
-;; will be integers, but be careful if your address range includes any specially
-;; initialized memory.
-(define (memory-filter pred memory [hi-address #f] [lo-address #f])
-  (unless hi-address
-    (set! hi-address (Memory-max-address memory)))
-  (unless lo-address
-    (set! lo-address (Memory-min-address memory)))
-  (let ([stream (address-stream hi-address lo-address)])
-    (stream->list
-     (stream-filter (λ (address)
-                      (pred address
-                            (memory-ref memory address)))
-                    stream))))
-
-;; Folds over the address from [hi-address] to [lo-address] using [proc].If
-;; either address is left as [#f], the corresponding default from the [memory]
-;; is used. The [proc] procedure should take three arguments: the accumulated
-;; value from the fold, an address, and the corresponding value in memory at
-;; that address. It should return a new accumulator, which will be passed
-;; forward to the next iteration of the fold or returned at the end. The
-;; [initial-value] is used to initialize the accumulator.
-(define (memory-fold proc initial-value memory [hi-address #f] [lo-address #f])
-  (unless hi-address
-    (set! hi-address (Memory-max-address memory)))
-  (unless lo-address
-    (set! lo-address (Memory-min-address memory)))
-  (let ([stream (address-stream hi-address lo-address)])
-    (stream-fold (λ (accumulator address)
-                   (proc accumulator
-                         address
-                         (memory-ref memory address)))
-                 initial-value
-                 stream)))
-
-;; I wanted to provide a different sort of API for interacting with memory, so
-;; these are attempts at implementing for-like iteration forms.
-;;
-;; for/memory: iterates over memory, where the value produced at each step will
-;;             be written to the current address.
-;;
-;; for/memory/list: iterates over memory, producing a new list like for/list.
-;;
-;; for/memory/fold: iterates over memory, producing a new reduced value like
-;;                  for/fold.
-;;
-;; for/memory/hash: iterates over memory, producing a new hash like for/hash.
-;;
-;; NOTE: There are no for* variations of memory iteration.
-
-(provide for/memory)
-(define-syntax (for/memory stx)
-  (syntax-parse stx
-    ;; FIXME: this binding form doesn't seem to work for some reason
-    [(_ ([(addr-id value-id) memory-clause])
-        body-or-break ...
-        body)
-     #''(for ([addr-id (in-gvector (Memory-initialized-addresses memory-clause))])
-         (let ([value-id (memory-ref memory-clause addr)])
-           body-or-break ...
-           body))]))
+;; Prints the contents of the .text section with addresses.
+(define (debug-instructions memory)
+  (when debug-on?
+    (debug "contents of .text:")
+    (let* ([text-range (section->range memory text)]
+           [lo-address (car text-range)]
+           [hi-address (cdr text-range)])
+      (for ([address (in-range hi-address (lesser-word-aligned-address lo-address) (* -1 word-size-bytes))])
+        (debug "  ~a\t~v" (format-word address 'hex) (memory-ref memory address))))))

@@ -10,7 +10,7 @@
   (provide current-shared?))
 
 (require "ast.rkt"
-         (only-in "interpreter/registers.rkt" register?))
+         (only-in "registers.rkt" register?))
 
 ;; Any -> Boolean
 (define (reg? x)
