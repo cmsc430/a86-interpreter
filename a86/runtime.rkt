@@ -3,21 +3,28 @@
 (require "memory.rkt"
          "utility.rkt"
 
-         (for-syntax syntax/parse))
+         (for-syntax syntax/parse
+                     racket/list))
 
 (provide current-runtime
          reset-runtime
+         ;; Parameters for runtime functions.
          runtime/flags
          runtime/registers
          runtime/memory
          runtime/stack-pointer
-         define/for-runtime
-         undefine/for-runtime
+         ;; Using a runtime.
          runtime-has-func?
          runtime-ref
+         ;; Defining runtimes.
+         define/for-runtime
+         undefine/for-runtime
          define-runtime
-         ;; Runtimes
-         evildoer)
+         define-runtimes
+         ;; Runtimes.
+         evildoer extort fraud hoax hustle iniquity jig knock loot
+         hoodwink
+         mountebank)
 
 ;; Runtimes are implemented as a simple opaque struct. This prevents users from
 ;; defining bad runtime values, perhaps by not properly converting their desired
@@ -123,14 +130,49 @@
 ;; Defines a runtime.
 (define-syntax (define-runtime stx)
   (syntax-parse stx
-    [(_ runtime-name ([(name arg ...) body ...+] ...))
-     #'(define runtime-name
-         (runtime (make-immutable-hash
-                   (list (cons 'name
-                               (λ (arg ...) body ...)) ...))))]))
+    [(_ runtime-name (~optional (~seq #:extending other-runtime)) bindings)
+     #`(define-runtimes (runtime-name) #,@(if (attribute other-runtime)
+                                              (syntax->list #'(#:extending other-runtime))
+                                              (list)) bindings)]))
 
-;; The Evildoer runtime.
-(define-runtime evildoer
-  ([(read-byte) (read-byte)]
-   [(peek-byte) (peek-byte)]
+;; Defines multiple runtime names with the same contents, allocating different
+;; [runtime?] objects for each.
+(define-syntax (define-runtimes stx)
+  (syntax-parse stx
+    [(_ names (~seq #:extending other-runtime-name:id) bindings)
+     #'(define-runtimes names
+         #:extending (runtime-names->functions other-runtime-name)
+         bindings)]
+    [(_ (runtime-name:id ...) (~optional (~seq #:extending other-runtime))
+        ([(func-name:id arg:id ...) body ...+] ...))
+     (let* ([names (syntax->list #'('func-name ...))]
+            [funcs (syntax->list #'((convert-runtime-function
+                                     (λ (arg ...) body ...)) ...))]
+            [runtime-def #`(runtime (#,@(if (attribute other-runtime)
+                                            (syntax->list #'(hash-set* other-runtime))
+                                            (list #'hash))
+                                     #,@(flatten (map list names funcs))))]
+            [runtimes (make-list (length (attribute runtime-name)) runtime-def)])
+       #`(define-values (runtime-name ...)
+           (values #,@runtimes)))]))
+
+;; The various runtimes are defined below.
+(define-runtimes (evildoer extort fraud hoax hustle iniquity jig knock loot)
+  ([(read-byte)    (read-byte)]
+   [(peek-byte)    (peek-byte)]
    [(write-byte b) (write-byte b)]))
+
+(define-runtime hoodwink #:extending hoax
+  ([(gensym) (gensym)]))
+
+;; TODO: Implement these.
+#;(define-runtime iniquity-gc #:extending iniquity
+    ([(print-memory)    #f]
+     [(collect_garbage) #f]
+     [(alloc_val)       #f]))
+
+;; TODO: Implement these.
+(define-runtime mountebank #:extending loot
+  ([(intern_symbol symb)  #f]
+   [(symb_cmp s1 s2)      #f]
+   [(memcpy dest src len) #f]))
