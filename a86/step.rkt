@@ -138,6 +138,8 @@
             [_ (debug "step ~a: ~v\t[~a]" time-tick current-instruction (format-word ip 'hex))]
             ;; A convenience for calling [memory-set!].
             [memory-set! (λ (address value) (memory-set! memory address time-tick value))]
+            ;; A convenience for calling [address-from-offset].
+            [address-from-offset (λ (offset) (address-from-offset registers offset))]
             ;; Called as the last step for every instruction's implementation.
             ;; The time tick is incremented, and other values are set as needed.
             [make-step-state
@@ -366,7 +368,7 @@
                                              arg value)])
               (make-step-state #:with-registers new-registers))]
            [(Lea dst l)
-            (let ([ea (cdr (hash-ref labels->addresses l))])
+            (let ([ea (hash-ref labels->addresses l)])
               (cond
                 [(register? dst)
                  ;; dst = address-of(l)
