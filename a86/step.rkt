@@ -214,10 +214,27 @@
             ;; Conditionally performs a jump to a target address.
             [jump-with-condition
              (λ (target condition)
-               (debug "    jumping to ~v: ~v" target condition)
-               (make-step-state #:with-ip (if condition
-                                              (process-argument target #:as '(register label))
-                                              (lesser-word-aligned-address ip))))])
+               (let ([jump? (or (eq? condition #t)
+                                (condition flags))])
+                 (debug "    jumping to ~v: ~v" target jump?)
+                 (if jump?
+                     (make-step-state #:with-ip (process-argument target #:as '(register label)))
+                     (make-step-state))))]
+            ;; Conditional moves a source into a destination.
+            [move-with-condition
+             (λ (dst src condition)
+               (let ([move? (or (eq? condition #t)
+                                (condition flags))])
+                 (debug "    moving ~v to ~v: ~v" src dst move?)
+                 (if move?
+                     (let ([val (process-argument src #:as '(register offset integer))])
+                       (cond
+                         [(register? dst)
+                          (make-step-state #:with-registers (hash-set registers dst val))]
+                         [(offset? dst)
+                          (memory-set! (address-from-offset dst) val)
+                          (make-step-state)]))
+                     (make-step-state))))])
        ;; We intercept exceptions to provide a bit of extra context.
        (with-handlers ([(λ (exn) (not (exn:fail:user? exn)))
                         (λ (exn)
@@ -228,6 +245,25 @@
                                              "\nexception message:\n"
                                              (exn-message exn))))])
          (match current-instruction
+           [(Push arg)
+            ;; stack.push(arg)
+            ;; rsp -= word-size-bytes
+            (let* ([base (process-argument arg #:as '(register integer))]
+                   [new-sp (lesser-word-aligned-address (hash-ref registers 'rsp))]
+                   [new-registers (hash-set registers 'rsp new-sp)])
+              (memory-set! new-sp base)
+              (make-step-state #:with-registers new-registers))]
+           [(Pop arg)
+            ;; rsp += word-size-bytes
+            ;; arg = stack.pop()
+            (let* ([sp (hash-ref registers 'rsp)]
+                   [value (memory-ref memory sp)]
+                   [new-sp (greater-word-aligned-address sp)]
+                   [new-registers (hash-set* registers
+                                             'rsp new-sp
+                                             arg value)])
+              (make-step-state #:with-registers new-registers))]
+
            [(Ret)
             ;; ip = stack.pop()
             (let* ([sp (hash-ref registers 'rsp)]
@@ -269,15 +305,13 @@
                   (memory-set! new-sp return-address)
                   (make-step-state #:with-ip new-ip
                                    #:with-registers new-registers)))]
-           [(Mov dst src)
-            ;; dst = src
-            (let ([arg (process-argument src #:as '(register offset integer))])
-              (cond
-                [(register? dst)
-                 (make-step-state #:with-registers (hash-set registers dst arg))]
-                [(offset? dst)
-                 (memory-set! (address-from-offset dst) arg)
-                 (make-step-state)]))]
+
+           [(Not x)
+            ;; x = !x
+            (let* ([base (process-argument x #:as 'register)]
+                   [negated (bitwise-not base)]
+                   [new-registers (hash-set registers x negated)])
+              (make-step-state #:with-registers new-registers))]
            [(Add dst src)
             ;; dst = dst + src
             (do-arith dst src a86:add)]
@@ -293,6 +327,12 @@
            [(Xor dst src)
             ;; dst = dst ^ src
             (do-arith dst src a86:xor)]
+           [(Cmp a1 a2)
+            ;; % update flags according to [a1 - a2].
+            (let*-values ([(arg1) (process-argument a1 #:as '(register offset))]
+                          [(arg2) (process-argument a2 #:as '(register offset integer))]
+                          [(_ new-flags) (a86:sub arg1 arg2)])
+              (make-step-state #:with-flags new-flags))]
            [(Sal dst i)
             ;; dst = dst << i
             ;;
@@ -325,48 +365,75 @@
                    [new-flags (make-flags #:carry set-carry?)])
               (make-step-state #:with-flags new-flags
                                #:with-registers new-registers))]
-           [(Cmp a1 a2)
-            ;; % update flags according to [a1 - a2].
-            (let*-values ([(arg1) (process-argument a1 #:as '(register offset))]
-                          [(arg2) (process-argument a2 #:as '(register offset integer))]
-                          [(_ new-flags) (a86:sub arg1 arg2)])
-              (make-step-state #:with-flags new-flags))]
+
            [(Jmp t)
             ;; % unconditionally set the instruction pointer to [t].
             (jump-with-condition t #t)]
            [(Je t)
             ;; % jump to [t] when [Cmp a1 a2] indicates [a1 = a2].
-            (jump-with-condition t (hash-ref flags 'ZF))]
+            (jump-with-condition t flags-e?)]
            [(Jne t)
             ;; % jump to [t] when [Cmp a1 a2] indicates [a1 <> a2].
-            (jump-with-condition t (not (hash-ref flags 'ZF)))]
+            (jump-with-condition t flags-ne?)]
            [(Jl t)
             ;; % jump to [t] when [Cmp a1 a2] indicates [a1 < a2].
-            (jump-with-condition t (xor (hash-ref flags 'SF)
-                                        (hash-ref flags 'OF)))]
+            (jump-with-condition t flags-l?)]
+           [(Jle t)
+            ;; % jump to [t] when [Cmp a1 a2] indicates [a1 <= a2].
+            (jump-with-condition t flags-le?)]
            [(Jg t)
             ;; % jump to [t] when [Cmp a1 a2] indicates [a1 > a2].
-            (jump-with-condition t (and (not (hash-ref flags 'ZF))
-                                        (eq? (hash-ref flags 'SF)
-                                             (hash-ref flags 'OF))))]
-           [(Push arg)
-            ;; stack.push(arg)
-            ;; rsp -= word-size-bytes
-            (let* ([base (process-argument arg #:as '(register integer))]
-                   [new-sp (lesser-word-aligned-address (hash-ref registers 'rsp))]
-                   [new-registers (hash-set registers 'rsp new-sp)])
-              (memory-set! new-sp base)
-              (make-step-state #:with-registers new-registers))]
-           [(Pop arg)
-            ;; rsp += word-size-bytes
-            ;; arg = stack.pop()
-            (let* ([sp (hash-ref registers 'rsp)]
-                   [value (memory-ref memory sp)]
-                   [new-sp (greater-word-aligned-address sp)]
-                   [new-registers (hash-set* registers
-                                             'rsp new-sp
-                                             arg value)])
-              (make-step-state #:with-registers new-registers))]
+            (jump-with-condition t flags-g?)]
+           [(Jge t)
+            ;; % jump to [t] when [Cmp a1 a2] indicates [a1 >= a2].
+            (jump-with-condition t flags-ge?)]
+           [(Jo t)
+            ;; % jump to [t] when [Cmp a1 a2] sets the overflow flag.
+            (jump-with-condition t flags-o?)]
+           [(Jno t)
+            ;; % jump to [t] when [Cmp a1 a2] unsets the overflow flag.
+            (jump-with-condition t flags-no?)]
+           [(Jc t)
+            ;; % jump to [t] when [Cmp a1 a2] sets the carry flag.
+            (jump-with-condition t flags-c?)]
+           [(Jnc t)
+            ;; % jump to [t] when [Cmp a1 a2] unsets the carry flag.
+            (jump-with-condition t flags-nc?)]
+
+           [(Mov dst src)
+            ;; dst = src
+            (move-with-condition dst src #t)]
+           [(Cmove dst src)
+            ;; dst = src  % when [Cmp a1 a2] indicates [a1 = a2].
+            (move-with-condition dst src flags-e?)]
+           [(Cmovne dst src)
+            ;; dst = src  % when [Cmp a1 a2] indicates [a1 <> a2].
+            (move-with-condition dst src flags-ne?)]
+           [(Cmovl dst src)
+            ;; dst = src  % when [Cmp a1 a2] indicates [a1 < a2].
+            (move-with-condition dst src flags-l?)]
+           [(Cmovle dst src)
+            ;; dst = src  % when [Cmp a1 a2] indicates [a1 <= a2].
+            (move-with-condition dst src flags-le?)]
+           [(Cmovg dst src)
+            ;; dst = src  % when [Cmp a1 a2] indicates [a1 > a2].
+            (move-with-condition dst src flags-g?)]
+           [(Cmovge dst src)
+            ;; dst = src  % when [Cmp a1 a2] indicates [a1 >= a2].
+            (move-with-condition dst src flags-ge?)]
+           [(Cmovo  dst src)
+            ;; dst = src  % when [Cmp a1 a2] sets the overflow flag.
+            (move-with-condition dst src flags-o?)]
+           [(Cmovno dst src)
+            ;; dst = src  % when [Cmp a1 a2] unsets the overflow flag.
+            (move-with-condition dst src flags-no?)]
+           [(Cmovc dst src)
+            ;; dst = src  % when [Cmp a1 a2] sets the carry flag.
+            (move-with-condition dst src flags-c?)]
+           [(Cmovnc dst src)
+            ;; dst = src  % when [Cmp a1 a2] unsets the carry flag.
+            (move-with-condition dst src flags-nc?)]
+
            [(Lea dst l)
             (let ([ea (hash-ref labels->addresses l)])
               (cond
