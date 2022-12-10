@@ -140,6 +140,12 @@
             [memory-set! (λ (address value) (memory-set! memory address time-tick value))]
             ;; A convenience for calling [address-from-offset].
             [address-from-offset (λ (offset) (address-from-offset registers offset))]
+            ;; Checks if an instruction address is valid.
+            [assert-ip-valid!
+             (λ (new-ip)
+               (unless (eq? (address->section-name memory new-ip)
+                            text)
+                 (raise-user-error 'segfault "invalid instruction pointer: ~v" new-ip)))]
             ;; Called as the last step for every instruction's implementation.
             ;; The time tick is incremented, and other values are set as needed.
             [make-step-state
@@ -218,7 +224,9 @@
                                 (condition flags))])
                  (debug "    jumping to ~v: ~v" target jump?)
                  (if jump?
-                     (make-step-state #:with-ip (process-argument target #:as '(register label)))
+                     (let ([new-ip (process-argument target #:as '(register label))])
+                       (assert-ip-valid! new-ip)
+                       (make-step-state #:with-ip new-ip))
                      (make-step-state))))]
             ;; Conditional moves a source into a destination.
             [move-with-condition
