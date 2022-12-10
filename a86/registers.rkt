@@ -9,6 +9,22 @@
          fresh-flags
          flag?
 
+         flags-o?
+         flags-s?
+         flags-z?
+         flags-c?
+         flags-no?
+         flags-ns?
+         flags-nz?
+         flags-nc?
+
+         flags-e?
+         flags-ne?
+         flags-l?
+         flags-le?
+         flags-g?
+         flags-ge?
+
          debug-flags
          trace-registers
          debug-registers)
@@ -42,6 +58,28 @@
 (define fresh-flags (make-flags))
 (define (flag? f)
   (member f flag-names))
+
+(define (flags-o? flags) (hash-ref flags 'OF))
+(define (flags-s? flags) (hash-ref flags 'SF))
+(define (flags-z? flags) (hash-ref flags 'ZF))
+(define (flags-c? flags) (hash-ref flags 'CF))
+(define (flags-no? flags) (not (hash-ref flags 'OF)))
+(define (flags-ns? flags) (not (hash-ref flags 'SF)))
+(define (flags-nz? flags) (not (hash-ref flags 'ZF)))
+(define (flags-nc? flags) (not (hash-ref flags 'CF)))
+
+(define flags-e? flags-z?)
+(define flags-ne? flags-nz?)
+(define (flags-l? flags) (xor (hash-ref flags 'SF)
+                              (hash-ref flags 'OF)))
+(define (flags-le? flags) (or (hash-ref flags 'ZF)
+                              (xor (hash-ref flags 'SF)
+                                   (hash-ref flags 'OF))))
+(define (flags-g? flags) (and (flags-ne? flags)
+                              (eq? (hash-ref flags 'SF)
+                                   (hash-ref flags 'OF))))
+(define (flags-ge? flags) (eq? (hash-ref flags 'SF)
+                               (hash-ref flags 'OF)))
 
 (define (debug-flags flags)
   (when debug-on?
