@@ -8,6 +8,8 @@
          max-unsigned
          min-unsigned
          a86-value?
+         64-bit-integer?
+         32-bit-integer?
          address?
          sign-mask
          truncate-integer/signed
@@ -59,6 +61,16 @@
                 (<= x max-signed))
            (and (>= x min-unsigned)
                 (<= x max-unsigned)))))
+
+;; Whether a value is a 64-bit integer.
+(define (64-bit-integer? x)
+  (and (exact-integer? x)
+       (<= (integer-length x) 64)))
+
+;; Whether a value is a 32-bit integer.
+(define (32-bit-integer? x)
+  (and (exact-integer? x)
+       (<= (integer-length x) 32)))
 
 ;; Addresses can be any unsigned integer values.
 (define (address? x)
