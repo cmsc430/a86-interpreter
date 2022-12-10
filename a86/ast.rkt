@@ -33,12 +33,12 @@
     x))
 
 (define check:cmov
-  (λ (a a1 a2 n)
+  (λ (a1 a2 n)
     (unless (register? a1)
       (error n "expects register; given ~v" a1))
     (unless (or (register? a2) (offset? a2))
       (error n "expects register or offset; given ~v" a2))
-    (values a a1 a2)))
+    (values a1 a2)))
 
 (define check:arith
   (λ (a1 a2 n)
