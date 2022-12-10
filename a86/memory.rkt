@@ -65,6 +65,9 @@
          handling-strategy
          max-cell-depth
          make-memory
+         address->section-name
+         address-readable?
+         address-writable?
          memory-ref
          memory-set!
          section->range
@@ -377,6 +380,25 @@
                                 (min index-base address))
                              word-size-bytes)])
        (list section-name section index))]))
+
+;; Converts an address into a section name.
+(define (address->section-name memory address)
+  (match (address->section+index memory address)
+    [#f #f]
+    [(list name _ _) name]))
+
+;; Determines whether an address is readable (i.e., the address corresponds to
+;; any section in this memory, rather than lying outside the sections).
+(define (address-readable? memory address)
+  (and (address->section-name memory address)
+       #t))
+
+;; Determines whether an address is writable (i.e., the address lies within the
+;; bounds of a read-write section).
+(define (address-writable? memory address)
+  (let ([name (address->section-name memory address)])
+    (and name
+         (member name read-write-sections))))
 
 ;; Performs an address lookup, raising an error (labeled ['segfault]) on
 ;; failure. On success, returns the result of [address->section+index].
