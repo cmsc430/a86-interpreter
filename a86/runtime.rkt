@@ -16,6 +16,7 @@
          ;; Using a runtime.
          runtime-has-func?
          runtime-ref
+         runtime-funcs
          ;; Defining runtimes.
          define/for-runtime
          undefine/for-runtime
@@ -127,6 +128,14 @@
     [(_ func-name)
      #'(runtime-ref (current-runtime) func-name)]))
 
+;; Returns a list of the functions currently defined in the runtime.
+(define-syntax (runtime-funcs stx)
+  (syntax-parse stx
+    [(_ runtime)
+     #'(hash-keys (runtime-names->functions runtime))]
+    [(_)
+     #'(runtime-funcs (current-runtime))]))
+
 ;; Defines a runtime.
 (define-syntax (define-runtime stx)
   (syntax-parse stx
@@ -158,9 +167,9 @@
 
 ;; The various runtimes are defined below.
 (define-runtimes (evildoer extort fraud hoax hustle iniquity jig knock loot)
-  ([(read-byte)    (read-byte)]
-   [(peek-byte)    (peek-byte)]
-   [(write-byte b) (write-byte b)]))
+  ([(read_byte)    (read-byte)]
+   [(peek_byte)    (peek-byte)]
+   [(write_byte b) (write-byte b)]))
 
 (define-runtime hoodwink #:extending hoax
   ([(gensym) (gensym)]))
