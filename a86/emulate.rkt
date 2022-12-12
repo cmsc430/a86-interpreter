@@ -39,7 +39,7 @@
                          memory
                          labels->addresses)
         [(cons last-state _)
-         (hash-ref (state->registers last-state) 'rax)]))))
+         (a86-value->signed-integer (hash-ref (state->registers last-state) 'rax))]))))
 
 ;; Converts the indices assigned to each label into addresses in the .text
 ;; section. It is assumed that all indices will properly lie within the bounds
@@ -55,15 +55,15 @@
 ;; and indexed subroutine labels.
 (define (separate-instructions instructions)
   (let separate ([instructions       instructions]
-                 [index              0]
-                 [section            text]
-                 [text-contents      '()]
-                 [data-contents      '()]
-                 [rodata-contents    '()]
-                 [bss-contents       '()]
-                 [globals            (set)]
-                 [externs            (set)]
-                 [label-index-assocs (list)])
+                 [index              0           ]
+                 [section            text        ]
+                 [text-contents      '()         ]
+                 [data-contents      '()         ]
+                 [rodata-contents    '()         ]
+                 [bss-contents       '()         ]
+                 [globals            (set)       ]
+                 [externs            (set)       ]
+                 [label-index-assocs (list)      ])
     (match instructions
       [(list)
        ;; NOTE: We intentionally do not reverse these lists. This way, the
