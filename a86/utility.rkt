@@ -14,6 +14,8 @@
          sign-mask
          truncate-integer/signed
          truncate-integer/unsigned
+         a86-value->signed-integer
+         signed-in-bounds?
          unsigned-in-bounds?
          make-mask
          align-address-to-word
@@ -84,13 +86,19 @@
 ;; Truncates a Racket integer for use in the machine as a signed integer. The
 ;; operation preserves the sign of the input.
 (define (truncate-integer/signed n)
-  (bitwise-ior (bitwise-and n max-signed)
-               (bitwise-and n sign-mask)))
+  (bitwise-ior (if (negative-integer? n) sign-mask 0)
+               (bitwise-and n max-signed)))
 
 ;; Converts a signed integer representation to its unsigned representation.
 ;; Truncates a Racket integer for use in the machine as an unsigned integer.
 (define (truncate-integer/unsigned n)
   (bitwise-and n max-unsigned))
+
+;; Converts an unsigned integer into a signed integer in Racket.
+(define (a86-value->signed-integer n)
+  (if (zero? (bitwise-and n sign-mask))
+      n
+      (- (add1 (bitwise-xor max-unsigned n)))))
 
 ;; Determines whether masking the signed representation of a number loses any
 ;; information.
@@ -110,8 +118,7 @@
       ;; Mask from the least-significant bits.
       (sub1 (arithmetic-shift 1 n))
       (bitwise-xor max-unsigned
-                   (sub1 (arithmetic-shift 1 (- word-size-bits
-                                                (- n)))))))
+                   (sub1 (arithmetic-shift 1 (- word-size-bits (- n)))))))
 
 ;; Given an address, produces the next lowest word-aligned address, according to
 ;; the value of [word-size-bytes]. If the given address is word-aligned, it is
