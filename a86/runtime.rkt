@@ -31,7 +31,7 @@
 ;; defining bad runtime values, perhaps by not properly converting their desired
 ;; functions. Instead of exporting this struct type, we provide a set of
 ;; functions to handle the creation/modification/deletion of runtimes.
-(struct runtime (names->functions))
+(struct runtime ([names->functions #:mutable]))
 
 ;; The six registers that can be used for passing arguments to subroutines. The
 ;; arguments are expected to be passed in the order of these arguments in this
@@ -93,14 +93,16 @@
 ;; [registers/runtime], [stack-memory/runtime], and [stack-pointer/runtime].
 (define-syntax (define/for-runtime stx)
   (syntax-parse stx
-    [(_ runtime (func-name args ...) body ...+)
-     #'(hash-set! (runtime-names->functions runtime)
+    [(_ (~seq #:runtime runtime) (func-name args ...) body ...+)
+     #'(set-runtime-names->functions!
+        runtime
+        (hash-set (runtime-names->functions runtime)
                   'func-name
                   (convert-runtime-function
                    (λ (args ...)
-                     body ...)))]
+                     body ...))))]
     [(_ (func-name args ...) body ...+)
-     #'(define/for-runtime (current-runtime)
+     #'(define/for-runtime #:runtime (current-runtime)
          (func-name args ...) body ...)]))
 
 ;; Removes a function from use in the runtime, if it's defined. Does nothing
