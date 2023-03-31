@@ -1,11 +1,9 @@
 #lang racket
 
-(provide initialize-state
-         state->flags
-         state->registers
-         step
-         step-count
-         multi-step)
+
+(provide (struct-out StepState)
+         end-of-program-signal
+         step/manual)
 
 (require "ast.rkt"
          "debug.rkt"
@@ -16,6 +14,48 @@
 
          (for-syntax syntax/parse
                      racket/syntax))
+
+;; FIXME: remove
+;; (struct Emulator ([states #:mutable]
+;;                   [state-index #:mutable]
+;;                   memory
+;;                   labels->addresses))
+
+;; (define (initialize-emulator instructions)
+;;   (let* ([prog   (make-program instructions)]
+;;          [mem    (make-memory-from-program prog)]
+;;          [ip     (cdr (address-range mem text))]
+;;          [addrs  (compute-label-addresses prog ip)]
+;;          [state  (initialize-state mem)]
+;;          [states (make-vector 32 #f)]
+;;          [_      (vector-set! states 0 state)])
+;;     (Emulator states 0 mem addrs)))
+
+;; (define (step emulator)
+;;   (match emulator
+;;     [(Emulator states state-index memory labels->addresses)
+;;      (let* ([new-state (step/manual (vector-ref states state-index)
+;;                                    memory
+;;                                    labels->addresses)]
+;;             [new-index (add1 state-index)]
+;;             [states (if (>= new-index (vector-length states))
+;;                         ())])
+;;        )]))
+
+;; ;; The collection of data needed to run the interpreter.
+;; ;;
+;; ;; TODO: Pick a better name. "Config" is misleading, but it's also a bit
+;; ;; different from a "State".
+;; (struct Config ([step-states #:mutable] memory labels->addresses))
+
+;; (define (make-config instructions)
+;;   (let* ([prog  (make-program instructions)]
+;;          [mem   (make-memory-from-program prog)]
+;;          [ip    (cdr (address-range mem text))]
+;;          [addrs (compute-label-addresses prog ip)])
+;;     (Config (list (initialize-state mem))
+;;             mem
+;;             addrs)))
 
 ;; The current state of the interpreter.
 (struct StepState (time-tick ip flags registers) #:transparent)
@@ -29,21 +69,13 @@
 ;;
 ;; The stack pointer is set in the ['rsp] register, while the heap pointer is
 ;; set in the ['rdi] register.
-(define (initialize-state memory)
-  (let ([instruction-pointer (cdr (section->range memory text))]
-        [stack-pointer (cdr (section->range memory stack))]
-        [heap-pointer (car (section->range memory heap))])
+#;(define (initialize-state memory)
+  (let ([instruction-pointer (cdr (address-range memory text))]
+        [stack-pointer (cdr (address-range memory stack))]
+        [heap-pointer (car (address-range memory heap))])
     (StepState 0 instruction-pointer fresh-flags (hash-set* fresh-registers
                                                             'rsp stack-pointer
                                                             'rdi heap-pointer))))
-
-;; Extracts the flags from a given [StepState?].
-(define (state->flags step-state)
-  (StepState-flags step-state))
-
-;; Extracts the registers from a given [StepState?].
-(define (state->registers step-state)
-  (StepState-registers step-state))
 
 ;; Provides a form for defining new binary instructions, such as Add and Sub.
 (define-syntax (define-binary-instruction stx)
@@ -125,13 +157,18 @@
   #:base-computation (bitwise-xor a1 a2)
   #:carry-computation #f)
 
+;; A value that signals the end of computation. If the input program attempts to
+;; [Ret] while this value is in the position of the expected return address, the
+;; execution will halt.
+(define end-of-program-signal 'end)
+
 ;; Executes a single step in the interpreter, producing a new [StepState?].
 ;;
 ;; The interpreter works by reading the next instruction from memory according
 ;; to the [ip] field of the given [StepState?]. Memory is modified in-place,
 ;; but registers and flags are set anew with each step to produce a new
 ;; [StepState?].
-(define (step step-state memory labels->addresses)
+(define (step/manual step-state memory labels->addresses)
   (match step-state
     [(StepState time-tick ip flags registers)
      (let* ([current-instruction (memory-ref memory ip)]
@@ -143,9 +180,11 @@
             ;; Checks if an instruction address is valid.
             [assert-ip-valid!
              (λ (new-ip)
-               (unless (eq? (address->section-name memory new-ip)
-                            text)
-                 (raise-user-error 'segfault "invalid instruction pointer: ~v" new-ip)))]
+               (match-let ([(list lo-address hi-address)
+                            (address-range memory text)])
+                 (unless (and (>= new-ip lo-address)
+                              (<= new-ip hi-address))
+                   (raise-user-error 'segfault "invalid instruction pointer: ~v" new-ip))))]
             ;; Called as the last step for every instruction's implementation.
             ;; The time tick is incremented, and other values are set as needed.
             [make-step-state
@@ -244,6 +283,7 @@
                           (make-step-state)]))
                      (make-step-state))))])
        ;; We intercept exceptions to provide a bit of extra context.
+       ;; TODO: Implement custom error handling for the stepper.
        (with-handlers ([(λ (exn) (not (exn:fail:user? exn)))
                         (λ (exn)
                           (raise-user-error 'step
@@ -252,6 +292,7 @@
                                                      current-instruction)
                                              "\nexception message:\n"
                                              (exn-message exn))))])
+         ;; TODO: Add more [debug] stuff throughout.
          (match current-instruction
            [(Push arg)
             ;; stack.push(arg)
@@ -278,9 +319,13 @@
                    [new-ip (memory-ref memory sp)]
                    [new-rsp (greater-word-aligned-address sp)]
                    [new-registers (hash-set registers 'rsp new-rsp)])
-              (debug "    returning to: ~a" (format-word new-ip 'hex))
-              (make-step-state #:with-ip new-ip
-                               #:with-registers new-registers))]
+              ;; TODO: Test this out.
+              (if (eq? new-ip end-of-program-signal)
+                  (begin (debug "    terminating program")
+                         step-state)
+                  (begin (debug "    returning to: ~a" (format-word new-ip 'hex))
+                         (make-step-state #:with-ip new-ip
+                                          #:with-registers new-registers))))]
            [(Call dst)
             ;; % The handling of a Call depends upon the argument.
             (if (runtime-has-func? dst)
@@ -311,6 +356,12 @@
                        [new-sp (lesser-word-aligned-address (hash-ref registers 'rsp))]
                        [new-registers (hash-set registers 'rsp new-sp)])
                   (memory-set! new-sp return-address)
+                  (debug "  wrote return address ~a to stack address ~a"
+                         (format-word return-address 'hex)
+                         (format-word new-sp 'hex))
+                  (debug "  retrieving address: ~a" (format-word
+                                                     (memory-ref memory new-sp)
+                                                     'hex))
                   (make-step-state #:with-ip new-ip
                                    #:with-registers new-registers)))]
 
@@ -458,16 +509,15 @@
                               current-instruction
                               ip)])))]))
 
-;; The maximum number of steps can be parameterized.
-(define step-count (make-parameter 1000))
+;; ;; The maximum number of steps can be parameterized.
+;; (define step-count (make-parameter 1000))
 
 ;; Performs multiple steps in the interpreter, unless execution terminates by
 ;; exhausting the available instructions or the step fuel runs out.
 ;;
 ;; TODO: Should an exhaustion of the available instructions instead produce an
 ;; error? What happens in real x86?
-(define (multi-step step-state memory labels->addresses)
-  (debug-instructions memory)
+#;(define (multi-step step-state memory labels->addresses)
   (debug "labels->addresses:")
   (for ([(label address) (in-hash labels->addresses)])
     (debug "  ~v\t~a" label (format-word address 'hex)))
@@ -477,8 +527,8 @@
     (debug-flags (state->flags step-state))
     (debug-registers (state->registers step-state))
     (if (or (zero? steps)
-            (< (StepState-ip step-state) (car (section->range memory 'text))))
+            (< (StepState-ip step-state) (car (address-range memory 'text))))
         (cons step-state states)
         (recurse (sub1 steps)
-                 (step step-state memory labels->addresses)
+                 (step/manual step-state memory labels->addresses)
                  (cons step-state states)))))

@@ -1,13 +1,17 @@
 #lang racket/base
 
 (require "utility.rkt"
-         "../a86/interpreter/registers.rkt"
-         "../a86/interpreter/utility.rkt"
+         "../a86/ast.rkt"
+         "../a86/registers.rkt"
+         "../a86/runtime.rkt"
+         "../a86/utility.rkt"
          rackunit)
+
+(provide (all-defined-out))
 
 (define all-register-names (cons 'eax register-names))
 (define offset-values (list 0 4 8))
-(define immediate-values (list 0 1 2 4 -1 (max-signed) (max-unsigned)))
+(define immediate-values (list 0 1 2 4 -1 max-signed max-unsigned))
 
 (define/provide-test-suite
   instruction-creation-tests
@@ -115,61 +119,57 @@
 
 (define/provide-test-suite
   program-creation-tests
-  (test-program-exn "no Externs or Labels"
-                    exn:fail:user?
-                    (λ () (Program (list (Mov 'rax 1)))))
-  (test-program-exn "Extern but no Label"
-                    exn:fail:user?
-                    (λ () (Program (list (Extern 'extern)
-                                         (Mov 'rax 1)))))
-  (test-program-exn "Extern after Label"
-                    exn:fail:user?
-                    (λ () (Program (list (Label 'label)
-                                         (Extern 'extern)))))
-  (test-program "program with only one Label"
-                (Program (list (Label 'entry))))
-  (test-program "program with Extern and Label"
-                (Program (list (Extern 'extern)
-                               (Label 'entry)))
-                (hash 'extern (λ () (error "don't run this"))))
-  (test-program "program with Mov"
-                (Program (list (Label 'entry)
-                               (Mov 'rax 1)))
-                #:with-registers (hash 'rax 1))
-  (test-program "program with Add"
-                (Program (list (Label 'entry)
-                               (Mov 'rax 1)
-                               (Add 'rax 'rax)))
-                #:with-registers (hash 'rax 2))
-  (test-program "program with Add and ZF"
-                (Program (list (Label 'entry)
-                               (Mov 'rax 1)
-                               (Add 'rax -1)))
-                #:with-flags (hash 'ZF #t)
-                #:with-registers (hash 'rax 0)))
+  (test-instructions-exn "no Externs or Labels"
+                         exn:fail?
+                         (Mov 'rax 1))
+  (test-instructions-exn "Extern but no label"
+                         exn:fail?
+                         (Extern 'extern)
+                         (Mov 'rax 1))
+  (test-instructions "program with only one Label"
+                     (Label 'entry))
+  (test-instructions "program with Extern and Label"
+                     #:runtime (runtime (hash 'extern (λ () (error "don't run this"))))
+                     (Extern 'extern)
+                     (Label 'entry))
+  (test-instructions "program with Mov"
+                     #:with-registers (hash 'rax 1)
+                     (Label 'entry)
+                     (Mov 'rax 1))
+  (test-instructions "program with Add"
+                     #:with-registers (hash 'rax 2)
+                     (Label 'entry)
+                     (Mov 'rax 1)
+                     (Add 'rax 'rax)))
+  (test-instructions "program with Add and ZF"
+                     #:with-flags (hash 'ZF #t)
+                     #:with-registers (hash 'rax 0)
+                     (Label 'entry)
+                     (Mov 'rax 1)
+                     (Add 'rax -1))
 
 (define (make-collatz-program n)
-  (Program (list (Label 'entry)
-                 (Mov 'rax n)
-                 (Mov 'rbx 1)
-                 (Label 'compare)
-                 (Mov 'rcx 1)
-                 (Cmp 'rax 'rcx)
-                 (Je 'finish)
-                 (Add 'rbx 1)
-                 (And 'rcx 'rax)
-                 (Cmp 'rcx 0)
-                 (Je 'divide)
-                 (Label 'increase)
-                 (Mov 'rcx 'rax)
-                 (Add 'rax 'rcx)
-                 (Add 'rax 'rcx)
-                 (Add 'rax 1)
-                 (Jmp 'compare)
-                 (Label 'divide)
-                 (Sar 'rax 1)
-                 (Jmp 'compare)
-                 (Label 'finish))))
+  (list (Label 'entry)
+        (Mov 'rax n)
+        (Mov 'rbx 1)
+        (Label 'compare)
+        (Mov 'rcx 1)
+        (Cmp 'rax 'rcx)
+        (Je 'finish)
+        (Add 'rbx 1)
+        (And 'rcx 'rax)
+        (Cmp 'rcx 0)
+        (Je 'divide)
+        (Label 'increase)
+        (Mov 'rcx 'rax)
+        (Add 'rax 'rcx)
+        (Add 'rax 'rcx)
+        (Add 'rax 1)
+        (Jmp 'compare)
+        (Label 'divide)
+        (Sar 'rax 1)
+        (Jmp 'compare)
+        (Label 'finish)))
 
 (define (collatz n)
   (define (calc n steps)
@@ -195,93 +195,52 @@
                     #:with-registers (hash 'rax 1
                                            'rbx steps)))))
 
-(define (make-flag-test-program op lhs rhs)
-  (Program (list (Label 'entry)
-                 (Mov 'rax lhs)
-                 (op 'rax rhs))))
+(define (format-value v)
+  (cond
+    [(equal? v max-signed)   'MAX_SIGNED]
+    [(equal? v min-signed)   'MIN_SIGNED]
+    [(equal? v max-unsigned) 'MAX_UNSIGNED]
+    [else                    v]))
+
+(define (test-arith-op op lhs rhs #:delete-files [delete-files #t])
+  (test-asm (format "~a: ~a and ~a)"
+                    (string-upcase (symbol->string (object-name op)))
+                    (format-value lhs)
+                    (format-value rhs))
+            (list (Mov 'rax lhs)
+                  (op  'rax rhs))
+            #:check-flags '(SF OF CF ZF)
+            #:check-registers '(rax)
+            #:delete-files delete-files))
+
+(define (make-arith-op-tester op #:delete-files [delete-files #t])
+  (λ (lhs rhs)
+    (test-arith-op op lhs rhs #:delete-files delete-files)))
 
 (define/provide-test-suite
   addition-flag-setting-tests
-  (test-program "add two small numbers to positive sum"
-                (make-flag-test-program Add 1 1)
-                #:with-flags (make-new-flags)
-                #:with-registers (hash 'rax 2))
-  (test-program "add two small numbers to negative sum"
-                (make-flag-test-program Add -2 1)
-                #:with-flags (make-new-flags #:sign #t)
-                #:with-registers (hash 'rax -1))
-  (test-program "add least signed value to greatest signed value"
-                (make-flag-test-program Add (max-signed) (min-signed))
-                #:with-flags (make-new-flags #:sign #t)
-                #:with-registers (hash 'rax (max-unsigned)))
-  (test-program "add two zeroes"
-                (make-flag-test-program Add 0 0)
-                #:with-flags (make-new-flags #:zero #t)
-                #:with-registers (hash 'rax 0))
-  (test-program "add 1100... to greatest signed value"
-                (make-flag-test-program Add (max-signed) (make-full-mask -2))
-                #:with-flags (make-new-flags #:carry #t)
-                #:with-registers (hash 'rax (make-full-mask (- (word-size-bits) 2))))
-  (test-program "add two small numbers to zero sum"
-                (make-flag-test-program Add -1 1)
-                #:with-flags (make-new-flags #:zero #t #:carry #t)
-                #:with-registers (hash 'rax 0))
-  (test-program "add one to greatest unsigned value"
-                (make-flag-test-program Add (max-unsigned) 1)
-                #:with-flags (make-new-flags #:zero #t #:carry #t)
-                #:with-registers (hash 'rax 0))
-  (test-program "add one to greatest signed value"
-                (make-flag-test-program Add (max-signed) 1)
-                #:with-flags (make-new-flags #:overflow #t #:sign #t)
-                #:with-registers (hash 'rax (min-signed)))
-  (test-program "add least signed value to greatest unsigned value"
-                (make-flag-test-program Add (max-unsigned) (min-signed))
-                #:with-flags (make-new-flags #:overflow #t #:carry #t)
-                #:with-registers (hash 'rax (max-signed)))
-  (test-program "add 10...1 to least signed value"
-                (make-flag-test-program Add (max-signed) (max-signed))
-                #:with-flags (make-new-flags #:overflow #t #:sign #t)
-                #:with-registers (hash 'rax (sub1 (max-unsigned))))
-  (test-program "add 1100... to 1100...1"
-                (make-flag-test-program Add (make-full-mask -2) (add1 (make-full-mask -2)))
-                #:with-flags (make-new-flags #:sign #t #:carry #t)
-                #:with-registers (hash 'rax (add1 (min-signed))))
-  (test-program "add least signed value to least signed value"
-                (make-flag-test-program Add (min-signed) (min-signed))
-                #:with-flags (make-new-flags #:overflow #t #:zero #t #:carry #t)
-                #:with-registers (hash 'rax 0)))
+  (let ([test-add (make-arith-op-tester Add)])
+    (test-add 1 1)
+    (test-add -2 1)
+    (test-add max-signed min-signed)
+    (test-add 0 0)
+    (test-add max-signed (make-mask -2))
+    (test-add -1 1)
+    (test-add max-unsigned 1)
+    (test-add max-signed 1)
+    (test-add max-unsigned min-signed)
+    (test-add max-signed max-signed)
+    (test-add (make-mask -2) (add1 (make-mask -2)))
+    (test-add min-signed min-signed)))
 
 (define/provide-test-suite
   subtraction-flag-setting-tests
-  (test-program "subtract two small numbers to positive difference"
-                (make-flag-test-program Sub 2 1)
-                #:with-flags (make-new-flags)
-                #:with-registers (hash 'rax 1))
-  (test-program "subtract greatest signed value from least signed value"
-                (make-flag-test-program Sub (min-signed) (max-signed))
-                #:with-flags (make-new-flags #:overflow #t)
-                #:with-registers (hash 'rax 1))
-  (test-program "subtract 1 from least signed value"
-                (make-flag-test-program Sub (min-signed) 1)
-                #:with-flags (make-new-flags #:overflow #t)
-                #:with-registers (hash 'rax (make-full-mask (sub1 (word-size-bits)))))
-  (test-program "subtract two zeroes"
-                (make-flag-test-program Sub 0 0)
-                #:with-flags (make-new-flags #:zero #t)
-                #:with-registers (hash 'rax 0))
-  (test-program "subtract greatest unsigned value from least unsigned value"
-                (make-flag-test-program Sub (min-unsigned) (max-unsigned))
-                #:with-flags (make-new-flags #:carry #t)
-                #:with-registers (hash 'rax 1))
-  (test-program "subtract 1 from 0"
-                (make-flag-test-program Sub 0 1)
-                #:with-flags (make-new-flags #:sign #t #:carry #t)
-                #:with-registers (hash 'rax (max-unsigned)))
-  (test-program "subtract two small numbers to negative difference"
-                (make-flag-test-program Sub 1 2)
-                #:with-flags (make-new-flags #:sign #t #:carry #t)
-                #:with-registers (hash 'rax -1))
-  (test-program "subtract least signed value from greatest signed value"
-                (make-flag-test-program Sub (max-signed) (min-signed))
-                #:with-flags (make-new-flags #:overflow #t #:sign #t #:carry #t)
-                #:with-registers (hash 'rax (max-unsigned))))
+  (let ([test-sub (make-arith-op-tester Sub)])
+    (test-sub 2 1)
+    (test-sub min-signed max-signed)
+    (test-sub min-signed 1)
+    (test-sub 0 0)
+    (test-sub min-unsigned max-unsigned)
+    (test-sub 0 1)
+    (test-sub 1 2)
+    (test-sub max-signed min-signed)))

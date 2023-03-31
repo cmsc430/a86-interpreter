@@ -5,7 +5,8 @@
          racket/set
          (for-syntax syntax/parse))
 
-(provide (rename-out [sequence seq])
+(provide seq
+         prog
          64-bit-integer?
          32-bit-integer?)
 
@@ -246,12 +247,11 @@
     [(Global x) x]
     [(Extern x) x]))
 
-(provide prog)
 ;; (U Instruction Asm) ... -> Asm
 ;; Construct a "program", does some global well-formedness checking to help
 ;; prevent confusing error messages as the nasm level
 (define (prog . xs)
-  (let ((p (apply sequence xs)))
+  (let ((p (apply seq xs)))
     (check-unique-label-decls p)
     (check-label-targets-declared p)
     (check-has-initial-label p)

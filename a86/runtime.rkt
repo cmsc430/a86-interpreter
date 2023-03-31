@@ -6,7 +6,8 @@
          (for-syntax syntax/parse
                      racket/list))
 
-(provide current-runtime
+(provide runtime
+         current-runtime
          reset-runtime
          ;; Parameters for runtime functions.
          runtime/flags
@@ -166,6 +167,24 @@
             [runtimes (make-list (length (attribute runtime-name)) runtime-def)])
        #`(define-values (runtime-name ...)
            (values #,@runtimes)))]))
+
+
+;; C standard library implementation.
+;;
+;;   malloc
+;;   free
+;;   printf
+;;   exit
+;;   putchar
+;;   getc
+;;   ungetc
+;;   putc
+;;   sizeof
+;;   memcpy
+
+#;(define-runtime libc
+  ([(malloc size) ()]))
+
 
 ;; The various runtimes are defined below.
 (define-runtimes (evildoer extort fraud hoax hustle iniquity jig knock loot)

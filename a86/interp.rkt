@@ -17,9 +17,10 @@
 ;; Assume: entry point is "entry"
 (require "emulate.rkt")
 (define (asm-interp a)
-  (asm-emulate a)
+  ;; FIXME: remove
+  #;(asm-emulate a)
   #;(displayln "hijacked asm-interp")
-  #;(asm-interp/io a #f))
+  (asm-interp/io a #f))
 
 (define fopen
   (get-ffi-obj "fopen" (ffi-lib #f) (_fun _path _string/utf-8 _-> _pointer)))

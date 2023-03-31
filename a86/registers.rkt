@@ -46,9 +46,9 @@
 ;; The flags are represented as a hashmap from flag names to values. Flags
 ;; should only be set to either [#t] or [#f]. Flags are initialized to [#f].
 (define (make-flags #:overflow [overflow #f]
-                    #:sign [sign #f]
-                    #:zero [zero #f]
-                    #:carry [carry #f])
+                    #:sign     [sign     #f]
+                    #:zero     [zero     #f]
+                    #:carry    [carry    #f])
   (hash 'OF overflow
         'SF sign
         'ZF zero

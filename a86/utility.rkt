@@ -9,6 +9,7 @@
          min-unsigned
          a86-value?
          64-bit-integer?
+         random-64-bit-integer
          32-bit-integer?
          address?
          sign-mask
@@ -23,7 +24,7 @@
          greater-word-aligned-address
          lesser-word-aligned-address
          aligned-to-word?
-         sequence)
+         seq)
 
 ;; The size of words, given in bytes.  This language is defined only for 64-bit
 ;; architectures, so we use 8-byte words.
@@ -39,11 +40,13 @@
 ;;           'binary OR 'bin OR 'b      - binary formatting
 ;;           'hexadecimal OR 'hex OR 'h - hexadecimal formatting
 (define (format-word value [mode 'binary])
-  (match mode
-    [(or 'binary 'bin 'b)
-     (~r value #:base 2 #:min-width word-size-bits #:pad-string "0")]
-    [(or 'hexadecimal 'hex 'h)
-     (~r value #:base 16 #:min-width word-size-bytes #:pad-string "0")]))
+  (if (exact-integer? value)
+      (match mode
+        [(or 'binary 'bin 'b)
+         (~r value #:base 2 #:min-width word-size-bits #:pad-string "0")]
+        [(or 'hexadecimal 'hex 'h)
+         (~r value #:base 16 #:min-width word-size-bytes #:pad-string "0")])
+      (~a value)))
 
 ;; Maximum and minimum values for signed and unsigned representations.
 ;; max-signed:   011...
@@ -68,6 +71,10 @@
 (define (64-bit-integer? x)
   (and (exact-integer? x)
        (<= (integer-length x) 64)))
+
+;; A random 64-bit value.
+(define (random-64-bit-integer)
+  (random min-unsigned (add1 max-unsigned)))
 
 ;; Whether a value is a 32-bit integer.
 (define (32-bit-integer? x)
@@ -147,7 +154,7 @@
   (= 0 (modulo address word-size-bytes)))
 
 ;; Combines lists and individual elements willy-nilly.
-(define (sequence . xs)
+(define (seq . xs)
   (foldr (λ (x xs)
            (if (list? x)
                (append x xs)
