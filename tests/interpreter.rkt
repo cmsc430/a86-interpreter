@@ -121,35 +121,42 @@
   program-creation-tests
   (test-instructions-exn "no Externs or Labels"
                          exn:fail?
-                         (Mov 'rax 1))
+                         (Mov 'rax 1)
+                         (Ret))
   (test-instructions-exn "Extern but no label"
                          exn:fail?
                          (Extern 'extern)
-                         (Mov 'rax 1))
+                         (Mov 'rax 1)
+                         (Ret))
   (test-instructions "program with only one Label"
-                     (Label 'entry))
+                     (Label 'entry)
+                     (Ret))
   (test-instructions "program with Extern and Label"
                      #:runtime (runtime (hash 'extern (λ () (error "don't run this"))))
                      (Extern 'extern)
-                     (Label 'entry))
+                     (Label 'entry)
+                     (Ret))
   (test-instructions "program with Mov"
                      #:with-registers (hash 'rax 1)
                      (Label 'entry)
-                     (Mov 'rax 1))
+                     (Mov 'rax 1)
+                     (Ret))
   (test-instructions "program with Add"
                      #:with-registers (hash 'rax 2)
                      (Label 'entry)
                      (Mov 'rax 1)
-                     (Add 'rax 'rax)))
+                     (Add 'rax 'rax)
+                     (Ret))
   (test-instructions "program with Add and ZF"
                      #:with-flags (hash 'ZF #t)
                      #:with-registers (hash 'rax 0)
                      (Label 'entry)
                      (Mov 'rax 1)
-                     (Add 'rax -1))
+                     (Add 'rax -1)
+                     (Ret)))
 
 (define (make-collatz-program n)
-  (list (Label 'entry)
+  (prog (Label 'entry)
         (Mov 'rax n)
         (Mov 'rbx 1)
         (Label 'compare)
@@ -169,7 +176,8 @@
         (Label 'divide)
         (Sar 'rax 1)
         (Jmp 'compare)
-        (Label 'finish)))
+        (Label 'finish)
+        (Ret)))
 
 (define (collatz n)
   (define (calc n steps)
