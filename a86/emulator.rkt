@@ -48,7 +48,7 @@
          emulator-multi-step!
          emulator-step-back!
          emulator->flags
-         emulator->registersmf
+         emulator->registers
          emulator-flag-ref
          emulator-register-ref
          emulator-memory-ref)
