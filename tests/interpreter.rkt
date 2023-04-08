@@ -211,15 +211,21 @@
     [else                    v]))
 
 (define (test-arith-op op lhs rhs #:delete-files [delete-files #t])
-  (test-asm (format "~a: ~a and ~a)"
-                    (string-upcase (symbol->string (object-name op)))
-                    (format-value lhs)
-                    (format-value rhs))
-            (list (Mov 'rax lhs)
-                  (op  'rax rhs))
-            #:check-flags '(SF OF CF ZF)
-            #:check-registers '(rax)
-            #:delete-files delete-files))
+  (let ([entry (gensym 'entry)])
+    (test-asm (format "~a: ~a and ~a"
+                      (string-upcase (symbol->string (object-name op)))
+                      (format-value lhs)
+                      (format-value rhs))
+              (prog (Global entry)
+                    (Label entry)
+                    (Mov 'rax lhs)
+                    (Mov 'r8 rhs)
+                    (op  'rax 'r8)
+                    (Ret))
+              #:entry-label entry
+              #:check-flags '(SF OF CF ZF)
+              #:check-registers '(rax)
+              #:delete-files delete-files)))
 
 (define (make-arith-op-tester op #:delete-files [delete-files #t])
   (λ (lhs rhs)
