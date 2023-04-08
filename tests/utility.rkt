@@ -105,6 +105,7 @@
 
 (define (test-asm name
                   instructions
+                  #:entry-label     [entry-label         #f]
                   #:check-flags     [check-flags     (list)]
                   #:check-registers [check-registers (list)]
                   #:delete-files    [delete-files        #t])
@@ -116,7 +117,7 @@
   (test-case test-description
     (let-values ([(flags regs)
                   (run-asm-test output-annotation
-                                (wrap-asm-test instructions)
+                                (wrap-asm-test instructions entry-label)
                                 #:delete-files delete-files)])
       (let ([expected-flags (for/hash ([flag check-flags])
                               (values flag (hash-ref flags flag)))]
