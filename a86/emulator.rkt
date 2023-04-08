@@ -63,13 +63,16 @@
 (struct Emulator ([states #:mutable]
                   [current-index #:mutable]
                   memory
-                  labels->addresses))
+                  labels->addresses)
+  #:transparent)
 
 (define states-size-increment 32)
 
 (define (initialize-emulator instructions)
   (let* ([prog   (make-program instructions)]
+         [_      (debug "program initialized")]
          [mem    (make-memory-from-program prog)]
+         [_      (debug "memory initialized")]
          ;; We add a "return address" at the top of the stack, used for
          ;; signaling program termination.
          [_      (begin
@@ -79,12 +82,16 @@
                                  (address-range-hi mem stack))
                                 0
                                 end-of-program-signal))]
+         [_      (debug "initial memory adjusted for end-of-program signal")]
          [ip     (address-range-hi mem text)]
+         [_      (debug "initial instruction pointer set: ~v" ip)]
          [addrs  (compute-label-addresses prog ip)]
+         [_      (debug "label addresses computed")]
          [state  (StepState 0 ip fresh-flags (hash-set* fresh-registers
                                                         'rsp (lesser-word-aligned-address
                                                               (address-range-hi mem stack))
                                                         'rdi (address-range-lo mem heap)))]
+         [_      (debug "first state initialized")]
          [states (make-vector states-size-increment #f)])
     (vector-set! states 0 state)
     (Emulator states 0 mem addrs)))
