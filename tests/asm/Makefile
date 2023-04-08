@@ -20,7 +20,10 @@ runtime.o: set_regs.o print_regs.o main.o
 .s.o:
 	nasm -g -f $(format) -o $@ $<
 
-.PHONY: clean-all clean
+.PHONY: clean-tests clean-all clean
+
+clean-tests: clean-all
+	-rm test*
 
 clean-all: clean
 	-rm *.run *.log *.out
