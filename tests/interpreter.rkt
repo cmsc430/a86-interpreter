@@ -231,30 +231,25 @@
   (λ (lhs rhs)
     (test-arith-op op lhs rhs #:delete-files delete-files)))
 
+(define arith-test-values
+  (list -2 -1 0 1 2
+        max-signed min-signed
+        max-unsigned min-unsigned
+        (make-mask -2) (add1 (make-mask -2))))
+
+(define arith-test-pairs
+  (for*/list ([lhs arith-test-values]
+              [rhs arith-test-values])
+    (list lhs rhs)))
+
 (define/provide-test-suite
   addition-flag-setting-tests
   (let ([test-add (make-arith-op-tester Add)])
-    (test-add 1 1)
-    (test-add -2 1)
-    (test-add max-signed min-signed)
-    (test-add 0 0)
-    (test-add max-signed (make-mask -2))
-    (test-add -1 1)
-    (test-add max-unsigned 1)
-    (test-add max-signed 1)
-    (test-add max-unsigned min-signed)
-    (test-add max-signed max-signed)
-    (test-add (make-mask -2) (add1 (make-mask -2)))
-    (test-add min-signed min-signed)))
+    (map (λ (args) (apply test-add args))
+         arith-test-pairs)))
 
 (define/provide-test-suite
   subtraction-flag-setting-tests
   (let ([test-sub (make-arith-op-tester Sub)])
-    (test-sub 2 1)
-    (test-sub min-signed max-signed)
-    (test-sub min-signed 1)
-    (test-sub 0 0)
-    (test-sub min-unsigned max-unsigned)
-    (test-sub 0 1)
-    (test-sub 1 2)
-    (test-sub max-signed min-signed)))
+    (map (λ (args) (apply test-sub args))
+         arith-test-pairs)))
