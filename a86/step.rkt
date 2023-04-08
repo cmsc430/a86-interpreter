@@ -111,8 +111,8 @@
                   [set-zero? (~? (~@ zero-computation)
                                  (~@ (= 0 masked-result)))]
                   [set-carry? (~? (~@ carry-computation)
-                                  (~@ (= 0 (bitwise-and base-result
-                                                        (arithmetic-shift 1 word-size-bits)))))]
+                                  (~@ (not (= 0 (bitwise-and base-result
+                                                             (arithmetic-shift 1 word-size-bits))))))]
                   [flags (make-flags #:overflow set-overflow?
                                      #:sign set-sign?
                                      #:zero set-zero?
