@@ -1,11 +1,14 @@
-#lang racket/base
+#lang racket
 
 (require "utility.rkt"
          "../a86/ast.rkt"
          "../a86/registers.rkt"
          "../a86/runtime.rkt"
          "../a86/utility.rkt"
-         rackunit)
+         rackunit
+
+         (for-syntax racket/syntax
+                     syntax/parse))
 
 (provide (all-defined-out))
 
@@ -242,14 +245,19 @@
               [rhs arith-test-values])
     (list lhs rhs)))
 
-(define/provide-test-suite
-  addition-flag-setting-tests
-  (let ([test-add (make-arith-op-tester Add)])
-    (map (λ (args) (apply test-add args))
-         arith-test-pairs)))
+(define-syntax (define/provide-arithmetic-test-suite stx)
+  (syntax-parse stx
+    [(_ op)
+     (with-syntax ([name (format-id #'op "~a-arith-tests"
+                                    (string-downcase (symbol->string (syntax-e #'op))))])
+       #'(define/provide-test-suite
+           name
+           (let ([test-func (make-arith-op-tester op)])
+             (map (λ (args) (apply test-func args))
+                  arith-test-pairs))))]))
 
-(define/provide-test-suite
-  subtraction-flag-setting-tests
-  (let ([test-sub (make-arith-op-tester Sub)])
-    (map (λ (args) (apply test-sub args))
-         arith-test-pairs)))
+(define/provide-arithmetic-test-suite Add)
+(define/provide-arithmetic-test-suite Sub)
+(define/provide-arithmetic-test-suite And)
+(define/provide-arithmetic-test-suite Or)
+(define/provide-arithmetic-test-suite Xor)
