@@ -15,67 +15,8 @@
          (for-syntax syntax/parse
                      racket/syntax))
 
-;; FIXME: remove
-;; (struct Emulator ([states #:mutable]
-;;                   [state-index #:mutable]
-;;                   memory
-;;                   labels->addresses))
-
-;; (define (initialize-emulator instructions)
-;;   (let* ([prog   (make-program instructions)]
-;;          [mem    (make-memory-from-program prog)]
-;;          [ip     (cdr (address-range mem text))]
-;;          [addrs  (compute-label-addresses prog ip)]
-;;          [state  (initialize-state mem)]
-;;          [states (make-vector 32 #f)]
-;;          [_      (vector-set! states 0 state)])
-;;     (Emulator states 0 mem addrs)))
-
-;; (define (step emulator)
-;;   (match emulator
-;;     [(Emulator states state-index memory labels->addresses)
-;;      (let* ([new-state (step/manual (vector-ref states state-index)
-;;                                    memory
-;;                                    labels->addresses)]
-;;             [new-index (add1 state-index)]
-;;             [states (if (>= new-index (vector-length states))
-;;                         ())])
-;;        )]))
-
-;; ;; The collection of data needed to run the interpreter.
-;; ;;
-;; ;; TODO: Pick a better name. "Config" is misleading, but it's also a bit
-;; ;; different from a "State".
-;; (struct Config ([step-states #:mutable] memory labels->addresses))
-
-;; (define (make-config instructions)
-;;   (let* ([prog  (make-program instructions)]
-;;          [mem   (make-memory-from-program prog)]
-;;          [ip    (cdr (address-range mem text))]
-;;          [addrs (compute-label-addresses prog ip)])
-;;     (Config (list (initialize-state mem))
-;;             mem
-;;             addrs)))
-
 ;; The current state of the interpreter.
 (struct StepState (time-tick ip flags registers) #:transparent)
-
-;; Initializes the state from the (already initialized) memory. The time tick is
-;; set to [0], fresh flags are initialized, and the following values are set up:
-;;
-;;   instruction pointer: highest address of the .text section.
-;;   stack pointer:       highest address of the .stack section.
-;;   heap pointer:        lowest address of the .heap section.
-;;
-;; The stack pointer is set in the ['rsp] register, while the heap pointer is
-;; set in the ['rdi] register.
-#;(define (initialize-state memory)
-  (let ([instruction-pointer (cdr (address-range memory text))]
-        [stack-pointer (cdr (address-range memory stack))]
-        [heap-pointer (car (address-range memory heap))])
-    (StepState 0 instruction-pointer fresh-flags (hash-set* fresh-registers
-                                                            'rsp stack-pointer
-                                                            'rdi heap-pointer))))
 
 ;; Provides a form for defining new binary instructions, such as Add and Sub.
 (define-syntax (define-binary-instruction stx)
@@ -508,27 +449,3 @@
                               "unrecognized instruction ~v at address ~a"
                               current-instruction
                               ip)])))]))
-
-;; ;; The maximum number of steps can be parameterized.
-;; (define step-count (make-parameter 1000))
-
-;; Performs multiple steps in the interpreter, unless execution terminates by
-;; exhausting the available instructions or the step fuel runs out.
-;;
-;; TODO: Should an exhaustion of the available instructions instead produce an
-;; error? What happens in real x86?
-#;(define (multi-step step-state memory labels->addresses)
-  (debug "labels->addresses:")
-  (for ([(label address) (in-hash labels->addresses)])
-    (debug "  ~v\t~a" label (format-word address 'hex)))
-  (let recurse ([steps (step-count)]
-                [step-state step-state]
-                [states '()])
-    (debug-flags (state->flags step-state))
-    (debug-registers (state->registers step-state))
-    (if (or (zero? steps)
-            (< (StepState-ip step-state) (car (address-range memory 'text))))
-        (cons step-state states)
-        (recurse (sub1 steps)
-                 (step/manual step-state memory labels->addresses)
-                 (cons step-state states)))))
