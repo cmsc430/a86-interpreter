@@ -78,35 +78,42 @@
   ;; Instruction -> String
   (define (instr->string i)
     (match i
+      ;; Sections.
       [(Text)      (string-append tab "section .text")]
       [(Data)      (string-append tab "section .data align=8")] ; 8-byte aligned data
-      [(Ret)       (string-append tab "ret")]
+      [(Rodata)    (string-append tab "section .rodata align=8")] ; 8-byte aligned read-only data
+      [(Bss)       (string-append tab "section .bss align=8")] ; 8-byte aligned static data
+
+      ;; Subsets of instructions.
       [(Label l)   (string-append (label-symbol->string l) ":")]
       [(Global x)  (string-append tab "global "  (label-symbol->string x))]
       [(Extern l)  (begin0 (string-append tab "extern " (label-symbol->string l))
                            (set! external-labels (cons l external-labels)))]
-      [(Mov a1 a2)
-       (string-append tab "mov "
-                      (arg->string a1) ", "
-                      (arg->string a2))]
+
+      ;; Stack maintenance.
+      [(Push a)
+       (string-append tab "push "
+                      (arg->string a))]
+      [(Pop r)
+       (string-append tab "pop "
+                      (reg->string r))]
+
+      ;; Function calls.
+      [(Ret)       (string-append tab "ret")]
+      [(Call l)
+       (string-append tab "call "
+                      (jump-target->string l))]
+
+      ;; Arithmetic operations.
+      [(Not x)
+       (string-append tab "not "
+                      (arg->string x))]
       [(Add a1 a2)
        (string-append tab "add "
                       (arg->string a1) ", "
                       (arg->string a2))]
       [(Sub a1 a2)
        (string-append tab "sub "
-                      (arg->string a1) ", "
-                      (arg->string a2))]
-      [(Cmp a1 a2)
-       (string-append tab "cmp "
-                      (arg->string a1) ", "
-                      (arg->string a2))]
-      [(Sal a1 a2)
-       (string-append tab "sal "
-                      (arg->string a1) ", "
-                      (arg->string a2))]
-      [(Sar a1 a2)
-       (string-append tab "sar "
                       (arg->string a1) ", "
                       (arg->string a2))]
       [(And a1 a2)
@@ -121,6 +128,20 @@
        (string-append tab "xor "
                       (arg->string a1) ", "
                       (arg->string a2))]
+      [(Cmp a1 a2)
+       (string-append tab "cmp "
+                      (arg->string a1) ", "
+                      (arg->string a2))]
+      [(Sal a1 a2)
+       (string-append tab "sal "
+                      (arg->string a1) ", "
+                      (arg->string a2))]
+      [(Sar a1 a2)
+       (string-append tab "sar "
+                      (arg->string a1) ", "
+                      (arg->string a2))]
+
+      ;; Jumps.
       [(Jmp l)
        (string-append tab "jmp "
                       (jump-target->string l))]
@@ -142,15 +163,66 @@
       [(Jge l)
        (string-append tab "jge "
                       (jump-target->string l))]
-      [(Call l)
-       (string-append tab "call "
+      [(Jo l)
+       (string-append tab "jo "
                       (jump-target->string l))]
-      [(Push a)
-       (string-append tab "push "
-                      (arg->string a))]
-      [(Pop r)
-       (string-append tab "pop "
-                      (reg->string r))]
+      [(Jno l)
+       (string-append tab "jno "
+                      (jump-target->string l))]
+      [(Jc l)
+       (string-append tab "jc "
+                      (jump-target->string l))]
+      [(Jnc l)
+       (string-append tab "jnc "
+                      (jump-target->string l))]
+
+      ;; Moves.
+      [(Mov a1 a2)
+       (string-append tab "mov "
+                      (arg->string a1) ", "
+                      (arg->string a2))]
+      [(Cmove dst src)
+       (string-append tab "cmove "
+                      (reg->string dst) ", "
+                      (arg->string src))]
+      [(Cmovne dst src)
+       (string-append tab "cmovne "
+                      (reg->string dst) ", "
+                      (arg->string src))]
+      [(Cmovl dst src)
+       (string-append tab "cmovl "
+                      (reg->string dst) ", "
+                      (arg->string src))]
+      [(Cmovle dst src)
+       (string-append tab "cmovle "
+                      (reg->string dst) ", "
+                      (arg->string src))]
+      [(Cmovg dst src)
+       (string-append tab "cmovg "
+                      (reg->string dst) ", "
+                      (arg->string src))]
+      [(Cmovge dst src)
+       (string-append tab "cmovge "
+                      (reg->string dst) ", "
+                      (arg->string src))]
+      [(Cmovo dst src)
+       (string-append tab "cmovo "
+                      (reg->string dst) ", "
+                      (arg->string src))]
+      [(Cmovno dst src)
+       (string-append tab "cmovno "
+                      (reg->string dst) ", "
+                      (arg->string src))]
+      [(Cmovc dst src)
+       (string-append tab "cmovc "
+                      (reg->string dst) ", "
+                      (arg->string src))]
+      [(Cmovnc dst src)
+       (string-append tab "cmovnc "
+                      (reg->string dst) ", "
+                      (arg->string src))]
+
+      ;; Other instructions.
       [(Lea d (? offset? x))
        (string-append tab "lea "
                       (arg->string d) ", "
@@ -168,6 +240,7 @@
                       " equ "
                       (number->string c))]
 
+      ;; Data instructions.
       [(Dd x)
        (string-append tab "dd " (arg->string x))]
       [(Dq x)
