@@ -261,3 +261,51 @@
 (define/provide-arithmetic-test-suite And)
 (define/provide-arithmetic-test-suite Or)
 (define/provide-arithmetic-test-suite Xor)
+
+(define (test-jump-op op lhs rhs #:delete-files [delete-files #t])
+  (let ([entry (gensym 'entry)]
+        [jump-target (gensym 'jump_target)])
+    (test-asm (format "~a after (Cmp ~a ~a)"
+                      (string-upcase (symbol->string (object-name op)))
+                      (format-value lhs)
+                      (format-value rhs))
+              (prog (Global entry)
+                    (Label entry)
+                    (Mov 'rax lhs)
+                    (Mov 'r8 rhs)
+                    (Cmp 'rax 'r8)
+                    (op jump-target)
+                    (Mov 'rax 0)
+                    (Ret)
+                    (Label jump-target)
+                    (Mov 'rax 1)
+                    (Ret))
+              #:entry-label entry
+              #:check-registers '(rax)
+              #:delete-files delete-files)))
+
+(define (make-jump-op-tester op #:delete-files [delete-files #t])
+  (λ (lhs rhs)
+    (test-jump-op op lhs rhs #:delete-files delete-file)))
+
+(define-syntax (define/provide-jump-test-suite stx)
+  (syntax-parse stx
+    [(_ op)
+     (with-syntax ([name (format-id #'op "~a-jump-tests"
+                                    (string-downcase (symbol->string (syntax-e #'op))))])
+       #'(define/provide-test-suite
+           name
+           (let ([test-func (make-jump-op-tester op)])
+             (map (λ (args) (apply test-func args))
+                  arith-test-pairs))))]))
+
+(define/provide-jump-test-suite Je)
+(define/provide-jump-test-suite Jne)
+(define/provide-jump-test-suite Jl)
+(define/provide-jump-test-suite Jle)
+(define/provide-jump-test-suite Jg)
+(define/provide-jump-test-suite Jge)
+(define/provide-jump-test-suite Jo)
+(define/provide-jump-test-suite Jno)
+(define/provide-jump-test-suite Jc)
+(define/provide-jump-test-suite Jnc)
