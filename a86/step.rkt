@@ -216,12 +216,16 @@
                  (debug "    moving ~v to ~v: ~v" src dst move?)
                  (if move?
                      (let ([val (process-argument src #:as '(register offset integer))])
+                       (debug "      src val: ~v" val)
                        (cond
                          [(register? dst)
                           (make-step-state #:with-registers (hash-set registers dst val))]
                          [(offset? dst)
-                          (memory-set! (address-from-offset dst) val)
-                          (make-step-state)]))
+                          (let ([addr (address-from-offset dst)])
+                            (debug "      dst addr: ~v" addr)
+                            (memory-set! addr val)
+                            (debug "      memory updated")
+                            (make-step-state))]))
                      (make-step-state))))])
        ;; We intercept exceptions to provide a bit of extra context.
        ;; TODO: Implement custom error handling for the stepper.
