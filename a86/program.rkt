@@ -14,6 +14,7 @@
                  data-contents
                  rodata-contents
                  bss-contents
+                 label-set
                  label-index-assocs)
   #:transparent)
 
@@ -22,6 +23,7 @@
                  data-contents
                  rodata-contents
                  bss-contents
+                 labels
                  globals  ;; TODO: is this necessary?
                  externs  ;; TODO: is this necessary?
                  label-index-assocs)
@@ -35,12 +37,12 @@
            ;; call to the actual initial label.
            [text-contents (append (take text-contents (sub1 (length text-contents)))
                                   (list (Call initial-label)))])
-      (Program text-contents data-contents rodata-contents bss-contents label-index-assocs))))
+      (Program text-contents data-contents rodata-contents bss-contents labels label-index-assocs))))
 
 ;; Initializes memory from a [Program?].
 (define (make-memory-from-program program)
   (match program
-    [(Program tc dc rc bc _)
+    [(Program tc dc rc bc _ _)
      (make-memory #:text-contents   tc
                   #:rodata-contents rc
                   #:data-contents   dc

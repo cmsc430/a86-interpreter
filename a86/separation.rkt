@@ -19,6 +19,7 @@
                  [data-contents      '()         ]
                  [rodata-contents    '()         ]
                  [bss-contents       '()         ]
+                 [labels             (set)       ]
                  [globals            (set)       ]
                  [externs            (set)       ]
                  [label-index-assocs (list)      ])
@@ -28,29 +29,31 @@
        ;; contents are written into memory in a top-down manner.
        ;; TODO: Is this the right behavior?
        (values text-contents data-contents rodata-contents bss-contents
-               globals externs label-index-assocs)]
+               labels globals externs label-index-assocs)]
       [(cons instruction instructions)
-       (let ([separate (λ (#:add-index [add-index   #t]  ;; This one is true!
-                           #:section   [new-section #f]  ;; The rest are false.
-                           #:text      [new-text    #f]
-                           #:data      [new-data    #f]
-                           #:rodata    [new-rodata  #f]
-                           #:bss       [new-bss     #f]
-                           #:globals   [new-globals #f]
-                           #:externs   [new-externs #f]
-                           #:labels    [new-labels  #f])
+       (let ([separate (λ (#:add-index    [add-index   #t]  ;; This one is true!
+                           #:section      [new-section #f]  ;; The rest are not.
+                           #:text         [new-text    #f]
+                           #:data         [new-data    #f]
+                           #:rodata       [new-rodata  #f]
+                           #:bss          [new-bss     #f]
+                           #:labels       [new-labels  #f]
+                           #:globals      [new-globals #f]
+                           #:externs      [new-externs #f]
+                           #:label-assocs [new-label-assocs #f])
                          (separate instructions
                                    (if add-index
                                        (add1 index)
                                        index)
-                                   (or new-section section)
-                                   (or new-text    text-contents)
-                                   (or new-data    data-contents)
-                                   (or new-rodata  rodata-contents)
-                                   (or new-bss     bss-contents)
-                                   (or new-globals globals)
-                                   (or new-externs externs)
-                                   (or new-labels  label-index-assocs)))])
+                                   (or new-section      section)
+                                   (or new-text         text-contents)
+                                   (or new-data         data-contents)
+                                   (or new-rodata       rodata-contents)
+                                   (or new-bss          bss-contents)
+                                   (or new-labels       labels)
+                                   (or new-globals      globals)
+                                   (or new-externs      externs)
+                                   (or new-label-assocs label-index-assocs)))])
          (match instruction
            [(Text)     (separate #:add-index #f #:section text)]
            [(Data)     (separate #:add-index #f #:section data)]
@@ -58,7 +61,9 @@
            [(Bss)      (separate #:add-index #f #:section bss)]
            [(Global g) (separate #:add-index #f #:globals (set-add globals g))]
            [(Extern e) (separate #:add-index #f #:externs (set-add externs e))]
-           [(Label l)  (separate #:add-index #f #:labels  (cons (cons l index) label-index-assocs))]
+           [(Label l)  (separate #:add-index #f
+                                 #:labels (set-add labels l)
+                                 #:label-assocs (cons (cons l index) label-index-assocs))]
            [(or (Dd x) (Dq x))
             (match section
               ['data   (separate #:add-index #f #:data   (cons x data-contents))]
