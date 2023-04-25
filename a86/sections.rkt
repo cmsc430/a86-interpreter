@@ -10,7 +10,8 @@
          initialize-static-sections
          (all-from-out "section.rkt"))
 
-(require "section.rkt"
+(require "debug.rkt"
+         "section.rkt"
          "utility.rkt")
 
 ;; These definitions for the section names simply protect against typos when
@@ -41,7 +42,7 @@
 ;; Returns two values: the next low address that can be used outside of the
 ;; allocated sections, and an association list mapping address ranges to a pair
 ;; of the section's name and its corresponding [Section?].
-(define (initialize-static-sections lo-address content-pairs)
+(define/debug (initialize-static-sections lo-address content-pairs)
   (for/fold ([lo-address lo-address]
              [ranges->sections (list)])
             ([content-pair content-pairs])
