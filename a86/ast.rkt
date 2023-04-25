@@ -129,6 +129,8 @@
     [(_ (Name (arg ...) (~optional guard #:defaults ([guard #'#f]))) ...+)
      #'(begin (provide (struct-out Name) ...)
               (struct Name Instruction (arg ...) #:transparent #:guard guard) ...
+              (provide all-instruction-names)
+              (define all-instruction-names (list 'Name ...))
               (provide get-instruction-name)
               (define (get-instruction-name instruction)
                 (match instruction
