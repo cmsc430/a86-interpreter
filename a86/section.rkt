@@ -14,6 +14,8 @@
          heap-allocate-space!
          heap-free-space!)
 
+(require "debug.rkt")
+
 ;; A pair of a time tick with a value. These are used for keeping track of
 ;; "when" a value was introduced to the machine.
 (struct Cell (tick value))
@@ -30,11 +32,11 @@
 (define max-cell-depth (make-parameter 10))
 
 ;; Given a list of elements, produces a vector of [Cell?]s of the same length.
-(define (list->cells contents [time-tick 0])
+(define/debug (list->cells contents [time-tick 0])
   (for/vector ([element contents])
     (vector-immutable (Cell time-tick element))))
 
-(define (add-cell cells cell)
+(define/debug (add-cell cells cell)
   (let ([max-depth (max-cell-depth)]
         [handling (handling-strategy)])
     (match cells
@@ -61,13 +63,13 @@
 
 (struct StaticSection ([contents #:mutable]))
 
-(define (make-static-section contents)
+(define/debug (make-static-section contents)
   (StaticSection (list->cells contents)))
 
-(define (static-section-ref static-section offset)
+(define/debug (static-section-ref static-section offset)
   (vector-ref (StaticSection-contents static-section) offset))
 
-(define (static-section-set! static-section offset cell)
+(define/debug (static-section-set! static-section offset cell)
   (let ([contents (StaticSection-contents static-section)])
     (vector-set! contents
                  offset
@@ -75,11 +77,12 @@
 
 ;;;; Heap
 
-(struct Heap ([allocations #:mutable]
+(struct Heap ([allocations #:mutable]  ;; [Listof [Pairof [Pairof lo-offset hi-offset]
+                                       ;;                 [Vectorof words]]]
               [curr-size #:mutable]
               max-size))
 
-(define (Heap-offset->adjoff+contents heap offset)
+(define/debug (Heap-offset->adjoff+contents heap offset)
   (for/or ([alloc (Heap-allocations heap)])
     (match alloc
       [(cons (cons lo-offset
@@ -87,18 +90,21 @@
              contents)
        (and (>= offset lo-offset)
             (<= offset hi-offset)
-            (cons (- lo-offset offset) contents))])))
+            (cons (+ lo-offset offset) contents))])))
 
-(define (make-heap max-size)
-  (Heap (vector) 0 max-size))
+(define/debug (make-heap max-size [initial-allocation-size #f])
+  (let ([heap (Heap '() 0 max-size)])
+    (when initial-allocation-size
+      (heap-allocate-space! heap initial-allocation-size))
+    heap))
 
-(define (heap-ref heap offset)
+(define/debug (heap-ref heap offset)
   (let ([adjoff+contents (Heap-offset->adjoff+contents heap offset)])
     (if adjoff+contents
         (vector-ref (cdr adjoff+contents) (car adjoff+contents))
         #f)))
 
-(define (heap-set! heap offset cell)
+(define/debug (heap-set! heap offset cell)
   (let ([adjoff+contents (Heap-offset->adjoff+contents heap offset)])
     (if adjoff+contents
         (let ([adjusted-offset (car adjoff+contents)]
@@ -106,9 +112,9 @@
           (vector-set! contents
                        adjusted-offset
                        (add-cell (vector-ref contents adjusted-offset) cell)))
-        (error 'segfault))))
+        (error 'segfault "no heap allocation for offset: ~v" offset))))
 
-(define (heap-allocate-space! heap new-allocation-size)
+(define/debug (heap-allocate-space! heap new-allocation-size)
   (let ([curr-size (Heap-curr-size heap)]
         [max-size (Heap-max-size heap)])
     (when (> (+ new-allocation-size curr-size)
@@ -124,7 +130,7 @@
              (Heap-allocations heap)))
       (set-Heap-curr-size! heap new-size))))
 
-(define (heap-free-space! heap base-offset)
+(define/debug (heap-free-space! heap base-offset)
   (for/list ([alloc (reverse (Heap-allocations heap))]
              #:unless (eq? base-offset (caar alloc)))
     alloc))
@@ -134,16 +140,16 @@
 (struct Stack ([contents #:mutable]
                max-size))
 
-(define (make-stack max-size [initial-size 0])
+(define/debug (make-stack max-size [initial-size 0])
   (Stack (make-vector initial-size #f) max-size))
 
-(define (stack-ref stack offset)
+(define/debug (stack-ref stack offset)
   (let ([contents (Stack-contents stack)])
     (if (< offset (vector-length contents))
         (vector-ref contents offset)
         #f)))
 
-(define (stack-set! stack offset cell)
+(define/debug (stack-set! stack offset cell)
   (let* ([contents (Stack-contents stack)]
          [curr-size (vector-length contents)])
     (when (>= offset curr-size)
@@ -164,7 +170,7 @@
 
 (define section-ref-failure-result (make-parameter 0))
 
-(define (section-ref section offset)
+(define/debug (section-ref section offset)
   (let* ([internal:section-ref
           (cond
             [(StaticSection? section) static-section-ref]
@@ -175,7 +181,7 @@
         (Cell-value (vector-ref result 0))
         (section-ref-failure-result))))
 
-(define (section-set! section offset tick value)
+(define/debug (section-set! section offset tick value)
   (let ([cell (Cell tick value)])
     (cond
       [(StaticSection? section)
