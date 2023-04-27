@@ -54,12 +54,13 @@
          emulator-register-ref
          emulator-memory-ref)
 
-(require "debug.rkt"
+(require "../debug.rkt"
+         "../registers.rkt"
+         "../utility.rkt"
+
          "memory.rkt"
          "program.rkt"
-         "registers.rkt"
-         "step.rkt"
-         "utility.rkt")
+         "step.rkt")
 
 (struct Emulator ([states #:mutable]
                   [current-index #:mutable]

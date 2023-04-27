@@ -5,10 +5,11 @@
          make-memory-from-program
          compute-label-addresses)
 
-(require "ast.rkt"
+(require "../ast.rkt"
+         "../utility.rkt"
+
          "memory.rkt"
-         "separation.rkt"
-         "utility.rkt")
+         "separation.rkt")
 
 (struct Program (text-contents
                  data-contents

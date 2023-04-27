@@ -20,15 +20,16 @@
                                  any/c)]
           #;[asm-emulate/io  (-> (listof instruction?) string? any/c)]))
 
-(require "emulate.rkt"
-         "etypes.rkt"
-         "tools.rkt"
-         "../ast.rkt"
-         "../emulator.rkt"
-         "../runtime.rkt"
+(require "../ast.rkt"
          "../utility.rkt"
 
-         (rename-in "../emulator.rkt" [emulator-step-count step-count]))
+         "emulate.rkt"
+         "emulator.rkt"
+         "etypes.rkt"
+         "runtime.rkt"
+         "tools.rkt"
+
+         (rename-in "emulator.rkt" [emulator-step-count step-count]))
 
 (define result/c (integer-in (convert min-signed    int64)
                              (convert max-unsigned uint64)))

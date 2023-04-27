@@ -4,7 +4,7 @@
          emulator-result
          asm-emulate)
 
-(require "../emulator.rkt")
+(require "emulator.rkt")
 
 (define current-emulator (make-parameter #f))
 (define emulator-result (make-parameter #f))

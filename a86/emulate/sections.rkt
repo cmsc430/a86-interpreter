@@ -8,11 +8,13 @@
          downward-sections
          upward-sections
          initialize-static-sections
+
          (all-from-out "section.rkt"))
 
-(require "debug.rkt"
-         "section.rkt"
-         "utility.rkt")
+(require "../debug.rkt"
+         "../utility.rkt"
+
+         "section.rkt")
 
 ;; These definitions for the section names simply protect against typos when
 ;; writing symbols, but we also establish some conventions around the use of

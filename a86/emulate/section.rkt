@@ -14,7 +14,7 @@
          heap-allocate-space!
          heap-free-space!)
 
-(require "debug.rkt")
+(require "../debug.rkt")
 
 ;; A pair of a time tick with a value. These are used for keeping track of
 ;; "when" a value was introduced to the machine.

@@ -1,7 +1,8 @@
 #lang racket
 
-(require "memory.rkt"
-         "utility.rkt"
+(require "../utility.rkt"
+
+         "memory.rkt"
 
          (for-syntax syntax/parse
                      racket/list))

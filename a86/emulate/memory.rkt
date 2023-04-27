@@ -25,9 +25,10 @@
 
          debug-memory-section)
 
-(require "debug.rkt"
-         "sections.rkt"
-         "utility.rkt")
+(require "../debug.rkt"
+         "../utility.rkt"
+
+         "sections.rkt")
 
 ;; Memory Representation
 ;;

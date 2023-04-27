@@ -5,12 +5,13 @@
          end-of-program-signal
          step/manual)
 
-(require "ast.rkt"
-         "debug.rkt"
+(require "../ast.rkt"
+         "../debug.rkt"
+         "../registers.rkt"
+         "../utility.rkt"
+
          "memory.rkt"
-         "registers.rkt"
          "runtime.rkt"
-         "utility.rkt"
 
          (for-syntax syntax/parse
                      racket/syntax))

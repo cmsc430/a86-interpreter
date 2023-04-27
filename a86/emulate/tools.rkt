@@ -4,8 +4,8 @@
          ptr-ref)
 
 (require "emulate.rkt"
-         "etypes.rkt"
-         "../emulator.rkt")
+         "emulator.rkt"
+         "etypes.rkt")
 
 (define (convert v t)
   (let* ([to-width (etype-bit-width t)]

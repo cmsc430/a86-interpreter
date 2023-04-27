@@ -2,7 +2,7 @@
 
 (provide separate-instructions)
 
-(require "ast.rkt"
+(require "../ast.rkt"
          "sections.rkt")
 
 ;; Separates a flat list of instructions into .text, .data, .rodata, and .bss
