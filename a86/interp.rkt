@@ -15,11 +15,7 @@
 ;; Asm -> Value
 ;; Interpret (by assemblying, linking, and loading) x86-64 code
 ;; Assume: entry point is "entry"
-(require "emulate.rkt")
 (define (asm-interp a)
-  ;; FIXME: remove
-  #;(asm-emulate a)
-  #;(displayln "hijacked asm-interp")
   (asm-interp/io a #f))
 
 (define fopen

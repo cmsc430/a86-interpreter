@@ -7,6 +7,7 @@
                      racket/list))
 
 (provide runtime
+         runtime?
          current-runtime
          reset-runtime
          ;; Parameters for runtime functions.
@@ -25,13 +26,14 @@
          define-runtimes
          ;; Runtimes.
          evildoer extort fraud hoax hustle iniquity jig knock loot
-         hoodwink
-         mountebank)
+         hoodwink)
 
 ;; Runtimes are implemented as a simple opaque struct. This prevents users from
 ;; defining bad runtime values, perhaps by not properly converting their desired
 ;; functions. Instead of exporting this struct type, we provide a set of
 ;; functions to handle the creation/modification/deletion of runtimes.
+;;
+;; TODO: Add custom printing to show currently defined functions.
 (struct runtime ([names->functions #:mutable]))
 
 ;; The six registers that can be used for passing arguments to subroutines. The
@@ -102,13 +104,13 @@
                   (convert-runtime-function
                    (λ (args ...)
                      body ...))))]
-    [(_ (func-name args ...) body ...+)
+    [(_ (func-name args ...) body ...+) ;; TODO: Use [function-header] syntax class?
      #'(define/for-runtime #:runtime (current-runtime)
          (func-name args ...) body ...)]))
 
 ;; Removes a function from use in the runtime, if it's defined. Does nothing
 ;; otherwise.
-(define-syntax (undefine/for-runtime stx)
+(define-syntax (undefine/for-runtime stx) ;; FIXME: Broken!
   (syntax-parse stx
     [(_ runtime func-name)
      #'(hash-remove! (runtime-names->functions runtime) 'func-name)]
@@ -202,7 +204,7 @@
      [(alloc_val)       #f]))
 
 ;; TODO: Implement these.
-(define-runtime mountebank #:extending loot
+#;(define-runtime mountebank #:extending loot
   ([(intern_symbol symb)  #f]
    [(symb_cmp s1 s2)      #f]
    [(memcpy dest src len) #f]))

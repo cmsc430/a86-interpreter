@@ -43,6 +43,7 @@
 ;; like to rewrite it all to handle this additional functionality at some point.
 
 (provide initialize-emulator
+         emulator?
          emulator-step!
          emulator-step-count
          emulator-multi-step!
@@ -65,6 +66,8 @@
                   memory
                   labels->addresses)
   #:transparent)
+
+(define emulator? Emulator?)
 
 (define states-size-increment 32)
 
