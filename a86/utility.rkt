@@ -7,7 +7,9 @@
          min-signed
          max-unsigned
          min-unsigned
+         max-unsigned/32-bit
          a86-value?
+         a86-value/32-bit?
          64-bit-integer?
          random-64-bit-integer
          32-bit-integer?
@@ -57,15 +59,14 @@
 (define min-signed         (arithmetic-shift 1 (sub1 word-size-bits)))
 (define max-unsigned (sub1 (arithmetic-shift 1       word-size-bits)))
 (define min-unsigned 0)
+(define max-unsigned/32-bit (sub1 (arithmetic-shift 1 32)))
 
-;; Values are integers that exist either in the signed or unsigned ranges.
+;; Values are integers in the 64-bit unsigned range
 (define (a86-value? x)
-  (and (integer? x)
-       (or (and (negative? x)
-                (>= x min-signed)
-                (<= x max-signed))
-           (and (>= x min-unsigned)
-                (<= x max-unsigned)))))
+  (<= min-unsigned x max-unsigned))
+
+(define (a86-value/32-bit? x)
+  (<= min-unsigned x max-unsigned/32-bit))
 
 ;; Whether a value is a 64-bit integer.
 (define (64-bit-integer? x)

@@ -162,7 +162,7 @@
                     (truncate-integer/unsigned arg)]
                    [(and (interpretation-matches? 'register)
                          (register? arg))
-                    (hash-ref registers arg)]
+                    (register-ref registers arg)]
                    [(and (interpretation-matches? 'offset)
                          (offset? arg))
                     (address-from-offset arg)]
@@ -193,9 +193,9 @@
             ;; Performs arithmetic operations.
             [do-arith (λ (dst src op)
                         (let*-values ([(arg) (process-argument src #:as '(register offset integer))]
-                                      [(base) (hash-ref registers dst)]
+                                      [(base) (register-ref registers dst)]
                                       [(computed-result new-flags) (op base arg)]
-                                      [(new-registers) (hash-set registers dst computed-result)])
+                                      [(new-registers) (register-set/truncate registers dst computed-result)])
                           (make-step-state #:with-flags new-flags
                                            #:with-registers new-registers)))]
             ;; Conditionally performs a jump to a target address.
@@ -220,7 +220,7 @@
                        (debug "      src val: ~v" val)
                        (cond
                          [(register? dst)
-                          (make-step-state #:with-registers (hash-set registers dst val))]
+                          (make-step-state #:with-registers (register-set/truncate registers dst val))]
                          [(offset? dst)
                           (let ([addr (address-from-offset dst)])
                             (debug "      dst addr: ~v" addr)
@@ -244,27 +244,27 @@
             ;; stack.push(arg)
             ;; rsp -= word-size-bytes
             (let* ([base (process-argument arg #:as '(register integer))]
-                   [new-sp (lesser-word-aligned-address (hash-ref registers 'rsp))]
-                   [new-registers (hash-set registers 'rsp new-sp)])
+                   [new-sp (lesser-word-aligned-address (register-ref registers 'rsp))]
+                   [new-registers (register-set registers 'rsp new-sp)])
               (memory-set! new-sp base)
               (make-step-state #:with-registers new-registers))]
            [(Pop arg)
             ;; rsp += word-size-bytes
             ;; arg = stack.pop()
-            (let* ([sp (hash-ref registers 'rsp)]
+            (let* ([sp (register-ref registers 'rsp)]
                    [value (memory-ref memory sp)]
                    [new-sp (greater-word-aligned-address sp)]
-                   [new-registers (hash-set* registers
-                                             'rsp new-sp
-                                             arg value)])
+                   [new-registers (register-set*/truncate registers
+                                                          'rsp new-sp
+                                                          arg value)])
               (make-step-state #:with-registers new-registers))]
 
            [(Ret)
             ;; ip = stack.pop()
-            (let* ([sp (hash-ref registers 'rsp)]
+            (let* ([sp (register-ref registers 'rsp)]
                    [new-ip (memory-ref memory sp)]
                    [new-rsp (greater-word-aligned-address sp)]
-                   [new-registers (hash-set registers 'rsp new-rsp)])
+                   [new-registers (register-set registers 'rsp new-rsp)])
               ;; TODO: Test this out.
               (if (eq? new-ip end-of-program-signal)
                   (begin (debug "    terminating program")
@@ -278,7 +278,7 @@
                 ;; If the target of the Call is a label corresponding to an
                 ;; external function in the runtime, we call that function.
                 (let* ([func (process-argument dst #:as 'external-function)]
-                       [sp (hash-ref registers 'rsp)]
+                       [sp (register-ref registers 'rsp)]
                        [result (func flags registers memory sp)])
                   (cond
                     [(void? result)
@@ -294,13 +294,13 @@
                                        dst
                                        result)]
                     [else
-                     (make-step-state #:with-registers (hash-set registers 'rax result))]))
+                     (make-step-state #:with-registers (register-set registers 'rax result))]))
                 ;; stack.push(ip + wordsize)
                 ;; ip = dst
                 (let* ([return-address (lesser-word-aligned-address ip)]
                        [new-ip (process-argument dst #:as '(register label))]
-                       [new-sp (lesser-word-aligned-address (hash-ref registers 'rsp))]
-                       [new-registers (hash-set registers 'rsp new-sp)])
+                       [new-sp (lesser-word-aligned-address (register-ref registers 'rsp))]
+                       [new-registers (register-set registers 'rsp new-sp)])
                   (memory-set! new-sp return-address)
                   (debug "  wrote return address ~a to stack address ~a"
                          (format-word return-address 'hex)
@@ -315,7 +315,7 @@
             ;; x = !x
             (let* ([base (process-argument x #:as 'register)]
                    [negated (bitwise-not base)]
-                   [new-registers (hash-set registers x negated)])
+                   [new-registers (register-set/truncate registers x negated)])
               (make-step-state #:with-registers new-registers))]
            [(Add dst src)
             ;; dst = dst + src
@@ -344,7 +344,7 @@
             ;; NOTE: It is assumed that [i] must be on [0, word-size-bits - 1].
             (let* ([base (process-argument dst #:as 'register)]
                    [shifted (truncate-integer/unsigned (arithmetic-shift base i))]
-                   [new-registers (hash-set registers dst shifted)]
+                   [new-registers (register-set/truncate registers dst shifted)]
                    [set-carry? (not (= 0 (bitwise-and (arithmetic-shift (arithmetic-shift 1 word-size-bits) (- i))
                                                       base)))]
                    [set-overflow? (and (= 1 i)
@@ -364,7 +364,7 @@
                    [masked (if msb?
                                (bitwise-ior shifted (make-mask (- i)))
                                shifted)]
-                   [new-registers (hash-set registers dst masked)]
+                   [new-registers (register-set/truncate registers dst masked)]
                    [set-carry? (not (= 0 (bitwise-and (arithmetic-shift 1 (- i 1))
                                                       base)))]
                    [new-flags (make-flags #:carry set-carry?)])
@@ -444,7 +444,7 @@
               (cond
                 [(register? dst)
                  ;; dst = address-of(l)
-                 (make-step-state #:with-registers (hash-set registers dst ea))]
+                 (make-step-state #:with-registers (register-set/truncate registers dst ea))]
                 [(offset? dst)
                  ;; memory[dst] = address-of(l)
                  (memory-set! (address-from-offset dst) ea)

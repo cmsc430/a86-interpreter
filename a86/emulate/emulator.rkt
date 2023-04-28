@@ -91,10 +91,10 @@
          [_      (debug "initial instruction pointer set: ~v" ip)]
          [addrs  (compute-label-addresses prog ip)]
          [_      (debug "label addresses computed")]
-         [state  (StepState 0 ip fresh-flags (hash-set* fresh-registers
-                                                        'rsp (lesser-word-aligned-address
-                                                              (address-range-hi mem stack))
-                                                        'rdi (address-range-lo mem heap)))]
+         [state  (StepState 0 ip fresh-flags (register-set* fresh-registers
+                                                            'rsp (lesser-word-aligned-address
+                                                                  (address-range-hi mem stack))
+                                                            'rdi (address-range-lo mem heap)))]
          [_      (debug "first state initialized")]
          [states (make-vector states-size-increment #f)])
     (vector-set! states 0 state)
@@ -172,7 +172,7 @@
   (hash-ref (emulator->flags emulator) flag))
 
 (define (emulator-register-ref emulator register)
-  (hash-ref (emulator->registers emulator) register))
+  (register-ref (emulator->registers emulator) register))
 
 (define (emulator-memory-ref emulator address)
   (memory-ref (Emulator-memory emulator) address))

@@ -1,6 +1,7 @@
 #lang racket
 
-(require "../utility.rkt"
+(require "../registers.rkt"
+         "../utility.rkt"
 
          "memory.rkt"
 
@@ -75,7 +76,7 @@
       (λ (flags registers memory stack-pointer)
         (let* ([reg-args (for/list ([_ (in-range reg-argc)]
                                     [reg argument-registers])
-                           (hash-ref registers reg))]
+                           (register-ref registers reg))]
                [mem-args (for/list ([_ (in-range mem-argc)])
                            (begin0 (memory-ref memory stack-pointer)
                              (set! stack-pointer (lesser-word-aligned-address stack-pointer))))]

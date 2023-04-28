@@ -121,5 +121,5 @@
                               lines))))
   (values
    (parse-flags (hash-ref k:vs 'flags))
-   (for/hash ([reg register-names])
+   (for/hash ([reg machine-register-names])
      (values reg (parse-register (hash-ref k:vs reg))))))

@@ -13,7 +13,6 @@
 (module+ test
   (require rackunit/text-ui))
 
-(define all-register-names (cons 'eax register-names))
 (define offset-values (list 0 4 8))
 (define immediate-values (list 0 1 2 4 -1 max-signed max-unsigned))
 (define symbol-values (append all-instruction-names
