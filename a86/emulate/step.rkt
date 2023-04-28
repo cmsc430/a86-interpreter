@@ -116,7 +116,8 @@
      (let* ([current-instruction (memory-ref memory ip)]
             [_ (debug "step ~a: ~v\t[~a]" time-tick current-instruction (format-word ip 'hex))]
             ;; A convenience for calling [memory-set!].
-            [memory-set! (λ (address value) (memory-set! memory address time-tick value))]
+            [memory-set! (λ (address value [byte-count word-size-bytes])
+                           (memory-set! memory address time-tick value byte-count))]
             ;; A convenience for calling [address-from-offset].
             [address-from-offset (λ (offset) (address-from-offset registers offset))]
             ;; Checks if an instruction address is valid.
@@ -222,10 +223,14 @@
                          [(register? dst)
                           (make-step-state #:with-registers (register-set/truncate registers dst val))]
                          [(offset? dst)
-                          (let ([addr (address-from-offset dst)])
+                          (let ([addr (address-from-offset dst)]
+                                ;; NOTE: If moving into something that doesn't
+                                ;; fit full words, it should be addressed here.
+                                [byte-count (cond
+                                              [(register/32-bit? src) 4]
+                                              [else 8])])
                             (debug "      dst addr: ~v" addr)
-                            (memory-set! addr val)
-                            (debug "      memory updated")
+                            (memory-set! addr val byte-count)
                             (make-step-state))]))
                      (make-step-state))))])
        ;; We intercept exceptions to provide a bit of extra context.
