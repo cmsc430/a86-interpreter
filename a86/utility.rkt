@@ -121,12 +121,23 @@
 ;; Constructs a bit-mask. If [n] is non-negative, the mask is constructed
 ;; starting from the least-significant bit. If [n] is negative, the mask is
 ;; constructed starting from the most-significant bit.
-(define (make-mask n)
+;;
+;; The [width] determines the total bit-width of the mask. By default, masks are
+;; made for words.
+;;
+;; The [offset] specifies an amount of bits to offset the mask by. The [offset]
+;; is assumed to be non-negative. It counts from the right for non-negative
+;; values of [n] and from the left for negative values of [n].
+(define (make-mask n [width word-size-bits] [offset 0])
   (if (>= n 0)
       ;; Mask from the least-significant bits.
-      (sub1 (arithmetic-shift 1 n))
-      (bitwise-xor max-unsigned
-                   (sub1 (arithmetic-shift 1 (- word-size-bits (- n)))))))
+      (bitwise-xor (sub1 (arithmetic-shift 1 (+ n offset)))
+                   (sub1 (arithmetic-shift 1 offset)))
+      ;; Mask from the most-significant bits.
+      (if (> (+ (abs n) offset) width)
+          (error 'make-mask "size + offset must be less than mask width")
+          (bitwise-xor (sub1 (arithmetic-shift 1 (- width offset)))
+                       (sub1 (arithmetic-shift 1 (- width (abs n) offset)))))))
 
 ;; Given an address, produces the next lowest word-aligned address, according to
 ;; the value of [word-size-bytes]. If the given address is word-aligned, it is
