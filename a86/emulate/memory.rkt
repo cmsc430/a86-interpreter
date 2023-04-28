@@ -269,17 +269,164 @@
 ;; Given a [Memory?] and address, looks up the current value stored at that
 ;; address in memory. Raises an error if the address cannot be accessed.
 (define/debug (memory-ref memory address)
-  (let-values ([(_ section offset) (address->section+offset memory address)])
-    (section-ref section offset)))
+  (let-values ([(_ section offset) (address->section+offset memory address)]
+               [(byte-offset) (remainder address word-size-bytes)])
+    (if (zero? byte-offset)
+        ;; If word-aligned, just get the word.
+        (section-ref section offset)
+        ;; Otherwise, get this word and the next one and combine the results
+        ;; appropriately.
+        ;;
+        ;; +----------- 0x0010 : Base address of lesser word.
+        ;; |        +-- 0x0018 : Base address of greater word.
+        ;; |        |
+        ;; V        V
+        ;; +--------+--------+
+        ;; |#####$$$|$$$$$###| <-- Original bits with desired word split across
+        ;; +--------+--------+     the word boundary.
+        ;;       ^
+        ;;       |
+        ;;       +-- Byte offset at which desired word begins.
+        ;;
+        ;; +--------+ +--------+
+        ;; |00000111| |11111000| <-- Masks for desired values.
+        ;; +--------+ +--------+
+        ;;
+        ;; +--------+ +--------+
+        ;; |00000$$$| |$$$$$000| <-- Masked desired values.
+        ;; +--------+ +--------+
+        ;;
+        ;; +--------+ +--------+
+        ;; |$$$00000| |000$$$$$| <-- Shifted desired values.
+        ;; +--------+ +--------+
+        ;;
+        ;; +--------+
+        ;; |$$$$$$$$| <-- End result.
+        ;; +--------+
+        (let* ([word0 (section-ref section offset)]
+               [word1 (section-ref section (add1 offset))]
+               [mask0 (make-mask (* -8 (- word-size-bytes byte-offset)))]
+               [mask1 (make-mask (* 8 byte-offset))]
+               [value0 (arithmetic-shift (bitwise-and mask0 word0)
+                                         (* -8 byte-offset))]
+               [value1 (arithmetic-shift (bitwise-and mask1 word1)
+                                         (* 8 (- word-size-bytes byte-offset)))]
+               [value (bitwise-ior value0 value1)])
+          value))))
 
 ;; Given a [Memory?], address, time tick, and value, attempts to set the memory
 ;; accordingly. Raises an error if the address cannot be accessed, or if the
 ;; address belongs to a region of read-only memory.
-(define/debug (memory-set! memory address tick value)
-  (let-values ([(name section offset) (address->section+offset memory address)])
+(define/debug (memory-set! memory address tick value [byte-count word-size-bytes])
+  (let-values ([(name section offset) (address->section+offset memory address)]
+               [(byte-offset) (remainder address word-size-bytes)])
     (unless (member name read-write-sections)
       (raise-user-error 'segfault "cannot write to address ~v in section ~a" address name))
-    (section-set! section offset tick value)))
+    (unless (<= byte-count word-size-bytes)
+      (error 'memory-set! "expected byte-count less than ~a; got ~a" word-size-bytes byte-count))
+    (cond
+      ;; If writing a word-aligned word, take the easy path.
+      [(and (zero? byte-offset)
+            (= byte-count word-size-bytes))
+       (section-set! section offset tick value)]
+      ;; If writing less than a word that will not cross a word boundary.
+      ;;
+      ;; +-- 0x0010 : Base address of word.
+      ;; |
+      ;; V
+      ;; +--------+
+      ;; |########| <-- Original bits.
+      ;; +--------+
+      ;;      ^
+      ;;      |
+      ;;      +-- Byte offset at which new bits will be written.
+      ;;
+      ;; +---+
+      ;; |$$$| <-- New bits to write (possibly not full word).
+      ;; +---+
+      ;;
+      ;; +--------+
+      ;; |11110001| <-- Mask for existing bits to keep.
+      ;; +--------+
+      ;;
+      ;; +--------+
+      ;; |0000$$$0| <-- Shifted new bits.
+      ;; +--------+
+      ;;
+      ;; +--------+
+      ;; |####000#| <-- Masked original bits.
+      ;; +--------+
+      ;;
+      ;; +--------+
+      ;; |####$$$#| <-- End result.
+      ;; +--------+
+      [(<= (+ byte-offset byte-count)
+           word-size-bytes)
+       (let* ([mask-010 (make-mask (* 8 byte-count)
+                                   word-size-bits
+                                   (* 8 byte-offset))]
+              [mask-101 (bitwise-xor (make-mask word-size-bits)
+                                     mask-010)]
+              [word0 (bitwise-and mask-101
+                                  (section-ref section offset))]
+              [value0 (arithmetic-shift value (* 8 byte-offset))]
+              [new-word0 (bitwise-ior word0 value0)])
+         (section-set! section offset tick new-word0))]
+      ;; Otherwise (writing a word or less that will cross a word boundary).
+      ;;
+      ;; +----------- 0x0010 : Base address of lesser word.
+      ;; |        +-- 0x0018 : Base address of greater word.
+      ;; |        |
+      ;; V        V
+      ;; +--------+--------+
+      ;; |########|########| <-- Original bits over two words.
+      ;; +--------+--------+
+      ;;        ^
+      ;;        |
+      ;;        +-- Byte offset at which new bits will be written.
+      ;;
+      ;; +-----+
+      ;; |$$$$$| <-- New bits to write (possibly not full word).
+      ;; +-----+
+      ;;
+      ;; +--------+ +--------+
+      ;; |11111100| |00011111| <-- Masks for existing values to keep.
+      ;; +--------+ +--------+
+      ;;
+      ;; +--------+ +--------+
+      ;; |######00| |000#####| <-- Masked values to keep.
+      ;; +--------+ +--------+
+      ;;
+      ;; +-----+ +-----+
+      ;; |11000| |00111| <-- Masks for separating new bits.
+      ;; +-----+ +-----+
+      ;;
+      ;; +--------+ +--------+
+      ;; |000000$$| |$$$00000| <-- Masked-and-shifted new bits.
+      ;; +--------+ +--------+
+      ;;
+      ;; +--------+--------+
+      ;; |######$$|$$$#####| <-- End result.
+      ;; +--------+--------+
+      [else
+       (let* ([byte-count0 (- word-size-bytes byte-offset)]
+              [byte-count1 (- byte-count byte-count0)]
+              [mask0 (make-mask (* 8 byte-offset))]
+              [mask1 (make-mask (* -8 (- word-size-bytes byte-count1)))]
+              [word0 (bitwise-and mask0 (section-ref section offset))]
+              [word1 (bitwise-and mask1 (section-ref section (add1 offset)))]
+              [vmask0 (make-mask (* 8 byte-count0)
+                                 (* 8 byte-count))]
+              [vmask1 (make-mask (* -8 byte-count1)
+                                 (* 8 byte-count))]
+              [value0 (arithmetic-shift (bitwise-and vmask0 value)
+                                        (* 8 byte-offset))]
+              [value1 (arithmetic-shift (bitwise-and vmask1 value)
+                                        (* -8 byte-count0))]
+              [new-word0 (bitwise-ior word0 value0)]
+              [new-word1 (bitwise-ior word1 value1)])
+         (section-set! section offset tick new-word0)
+         (section-set! section (add1 offset) tick new-word1))])))
 
 (define (debug-memory-section memory section-name)
   (when debug-on?
