@@ -429,8 +429,8 @@
          (section-set! section (add1 offset) tick new-word1))])))
 
 (define (debug-memory-section memory section-name)
-  (when debug-on?
-    (debug "  contents of section: ~a" (symbol->string section-name))
+  (begin/debug
+    ("contents of section: ~a" (symbol->string section-name))
     (match (address-range memory section-name)
       [(list lo hi)
        (parameterize ([section-ref-failure-result #f])
