@@ -47,7 +47,7 @@
         [(or 'binary 'bin 'b)
          (~r value #:base 2 #:min-width word-size-bits #:pad-string "0")]
         [(or 'hexadecimal 'hex 'h)
-         (~r value #:base 16 #:min-width word-size-bytes #:pad-string "0")])
+         (~r value #:base 16 #:min-width (* 2 word-size-bytes) #:pad-string "0")])
       (~a value)))
 
 ;; Maximum and minimum values for signed and unsigned representations.
