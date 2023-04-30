@@ -62,10 +62,14 @@
          "program.rkt"
          "step.rkt")
 
-(struct Emulator ([states #:mutable]
-                  [current-index #:mutable]
-                  memory
-                  labels->addresses)
+(module+ private
+  (provide (struct-out Emulator)
+           emulator-state))
+
+(struct Emulator ([states        #:mutable] ;; [Vectorof StepState?]
+                  [current-index #:mutable] ;; integer?
+                  memory                    ;; Memory?
+                  labels->addresses)        ;; [Hashof label? address?]
   #:transparent)
 
 (define emulator? Emulator?)
@@ -100,10 +104,11 @@
     (vector-set! states 0 state)
     (Emulator states 0 mem addrs)))
 
-(define (emulator-state emulator)
+(define (emulator-state emulator [step #f])
   (match emulator
     [(Emulator states index _ _)
-     (vector-ref states index)]))
+     (vector-ref states (or step
+                            index))]))
 
 (define (emulator-step! emulator)
   (match emulator
