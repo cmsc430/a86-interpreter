@@ -14,8 +14,7 @@
 ;; Assume: entry point is "entry"
 (define (asm-emulate instructions
                      #:after [after-thunk (λ () (emulator-result))]
-                     ;; FIXME: "on exit", not "on error"
-                     #:on-error [error-thunk (λ () (void))])
+                     #:on-exit [error-thunk (λ () (void))])
   (parameterize ([exit-handler (λ (v)
                                  (error-thunk)
                                  (error 'exit "program exited with status: ~a" v))]

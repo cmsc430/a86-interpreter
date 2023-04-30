@@ -16,7 +16,7 @@
                                  result/c)]
           [asm-emulate      (->* ([listof instruction?])
                                  (#:after (-> any/c)
-                                  #:on-error (-> any/c))
+                                  #:on-exit (-> any/c))
                                  any/c)]
           #;[asm-emulate/io  (-> (listof instruction?) string? any/c)]))
 
