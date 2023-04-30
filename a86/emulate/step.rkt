@@ -12,12 +12,10 @@
 
          "memory.rkt"
          "runtime.rkt"
+         "state.rkt"
 
          (for-syntax syntax/parse
                      racket/syntax))
-
-;; The current state of the interpreter.
-(struct StepState (time-tick ip flags registers) #:transparent)
 
 ;; Provides a form for defining new binary instructions, such as Add and Sub.
 (define-syntax (define-binary-instruction stx)
@@ -233,229 +231,219 @@
                             (memory-set! addr val byte-count)
                             (make-step-state))]))
                      (make-step-state))))])
-       ;; We intercept exceptions to provide a bit of extra context.
-       ;; TODO: Implement custom error handling for the stepper.
-       (with-handlers ([(λ (exn) (not (exn:fail:user? exn)))
-                        (λ (exn)
-                          (raise-user-error 'step
-                                            (string-append
-                                             (format "encountered unhandled error evaluating instruction ~v"
-                                                     current-instruction)
-                                             "\nexception message:\n"
-                                             (exn-message exn))))])
-         ;; TODO: Add more [debug] stuff throughout.
-         (match current-instruction
-           [(Push arg)
-            ;; stack.push(arg)
-            ;; rsp -= word-size-bytes
-            (let* ([base (process-argument arg #:as '(register integer))]
-                   [new-sp (lesser-word-aligned-address (register-ref registers 'rsp))]
-                   [new-registers (register-set registers 'rsp new-sp)])
-              (memory-set! new-sp base)
-              (make-step-state #:with-registers new-registers))]
-           [(Pop arg)
-            ;; rsp += word-size-bytes
-            ;; arg = stack.pop()
-            (let* ([sp (register-ref registers 'rsp)]
-                   [value (memory-ref memory sp)]
-                   [new-sp (greater-word-aligned-address sp)]
-                   [new-registers (register-set*/truncate registers
-                                                          'rsp new-sp
-                                                          arg value)])
-              (make-step-state #:with-registers new-registers))]
+       ;; TODO: Add more [debug] stuff throughout.
+       (match current-instruction
+         [(Push arg)
+          ;; stack.push(arg)
+          ;; rsp -= word-size-bytes
+          (let* ([base (process-argument arg #:as '(register integer))]
+                 [new-sp (lesser-word-aligned-address (register-ref registers 'rsp))]
+                 [new-registers (register-set registers 'rsp new-sp)])
+            (memory-set! new-sp base)
+            (make-step-state #:with-registers new-registers))]
+         [(Pop arg)
+          ;; rsp += word-size-bytes
+          ;; arg = stack.pop()
+          (let* ([sp (register-ref registers 'rsp)]
+                 [value (memory-ref memory sp)]
+                 [new-sp (greater-word-aligned-address sp)]
+                 [new-registers (register-set*/truncate registers
+                                                        'rsp new-sp
+                                                        arg value)])
+            (make-step-state #:with-registers new-registers))]
 
-           [(Ret)
-            ;; ip = stack.pop()
-            (let* ([sp (register-ref registers 'rsp)]
-                   [new-ip (memory-ref memory sp)]
-                   [new-rsp (greater-word-aligned-address sp)]
-                   [new-registers (register-set registers 'rsp new-rsp)])
-              ;; TODO: Test this out.
-              (if (eq? new-ip end-of-program-signal)
-                  (begin (debug "    terminating program")
-                         step-state)
-                  (begin (debug "    returning to: ~a" (format-word new-ip 'hex))
-                         (make-step-state #:with-ip new-ip
-                                          #:with-registers new-registers))))]
-           [(Call dst)
-            ;; % The handling of a Call depends upon the argument.
-            (if (runtime-has-func? dst)
-                ;; If the target of the Call is a label corresponding to an
-                ;; external function in the runtime, we call that function.
-                (let* ([func (process-argument dst #:as 'external-function)]
-                       [sp (register-ref registers 'rsp)]
-                       [result (func flags registers memory sp)])
-                  (cond
-                    [(void? result)
-                     (make-step-state)]
-                    [(not (integer? result))
-                     (raise-user-error 'step-Call
-                                       "result of call to external function '~a' not void? or integer?: ~v"
-                                       dst
-                                       result)]
-                    [(not (<= (integer-length result) word-size-bits))
-                     (raise-user-error 'step-Call
-                                       "integer result of call to external function '~a' too wide: ~v"
-                                       dst
-                                       result)]
-                    [else
-                     (make-step-state #:with-registers (register-set registers 'rax result))]))
-                ;; stack.push(ip + wordsize)
-                ;; ip = dst
-                (let* ([return-address (lesser-word-aligned-address ip)]
-                       [new-ip (process-argument dst #:as '(register label))]
-                       [new-sp (lesser-word-aligned-address (register-ref registers 'rsp))]
-                       [new-registers (register-set registers 'rsp new-sp)])
-                  (memory-set! new-sp return-address)
-                  (debug "  wrote return address ~a to stack address ~a"
-                         (format-word return-address 'hex)
-                         (format-word new-sp 'hex))
-                  (debug "  retrieving address: ~a" (format-word
-                                                     (memory-ref memory new-sp)
-                                                     'hex))
-                  (make-step-state #:with-ip new-ip
-                                   #:with-registers new-registers)))]
+         [(Ret)
+          ;; ip = stack.pop()
+          (let* ([sp (register-ref registers 'rsp)]
+                 [new-ip (memory-ref memory sp)]
+                 [new-rsp (greater-word-aligned-address sp)]
+                 [new-registers (register-set registers 'rsp new-rsp)])
+            ;; TODO: Test this out.
+            (if (eq? new-ip end-of-program-signal)
+                (begin (debug "    terminating program")
+                       step-state)
+                (begin (debug "    returning to: ~a" (format-word new-ip 'hex))
+                       (make-step-state #:with-ip new-ip
+                                        #:with-registers new-registers))))]
+         [(Call dst)
+          ;; % The handling of a Call depends upon the argument.
+          (if (runtime-has-func? dst)
+              ;; If the target of the Call is a label corresponding to an
+              ;; external function in the runtime, we call that function.
+              (let* ([func (process-argument dst #:as 'external-function)]
+                     [sp (register-ref registers 'rsp)]
+                     [result (func flags registers memory sp)])
+                (cond
+                  [(void? result)
+                   (make-step-state)]
+                  [(not (integer? result))
+                   (raise-user-error 'step-Call
+                                     "result of call to external function '~a' not void? or integer?: ~v"
+                                     dst
+                                     result)]
+                  [(not (<= (integer-length result) word-size-bits))
+                   (raise-user-error 'step-Call
+                                     "integer result of call to external function '~a' too wide: ~v"
+                                     dst
+                                     result)]
+                  [else
+                   (make-step-state #:with-registers (register-set registers 'rax result))]))
+              ;; stack.push(ip + wordsize)
+              ;; ip = dst
+              (let* ([return-address (lesser-word-aligned-address ip)]
+                     [new-ip (process-argument dst #:as '(register label))]
+                     [new-sp (lesser-word-aligned-address (register-ref registers 'rsp))]
+                     [new-registers (register-set registers 'rsp new-sp)])
+                (memory-set! new-sp return-address)
+                (debug "  wrote return address ~a to stack address ~a"
+                       (format-word return-address 'hex)
+                       (format-word new-sp 'hex))
+                (debug "  retrieving address: ~a" (format-word
+                                                   (memory-ref memory new-sp)
+                                                   'hex))
+                (make-step-state #:with-ip new-ip
+                                 #:with-registers new-registers)))]
 
-           [(Not x)
-            ;; x = !x
-            (let* ([base (process-argument x #:as 'register)]
-                   [negated (bitwise-not base)]
-                   [new-registers (register-set/truncate registers x negated)])
-              (make-step-state #:with-registers new-registers))]
-           [(Add dst src)
-            ;; dst = dst + src
-            (do-arith dst src a86:add)]
-           [(Sub dst src)
-            ;; dst = dst - src
-            (do-arith dst src a86:sub)]
-           [(And dst src)
-            ;; dst = dst & src
-            (do-arith dst src a86:and)]
-           [(Or dst src)
-            ;; dst = dst | src
-            (do-arith dst src a86:ior)]
-           [(Xor dst src)
-            ;; dst = dst ^ src
-            (do-arith dst src a86:xor)]
-           [(Cmp a1 a2)
-            ;; % update flags according to [a1 - a2].
-            (let*-values ([(arg1) (process-argument a1 #:as '(register offset))]
-                          [(arg2) (process-argument a2 #:as '(register offset integer))]
-                          [(_ new-flags) (a86:sub arg1 arg2)])
-              (make-step-state #:with-flags new-flags))]
-           [(Sal dst i)
-            ;; dst = dst << i
-            ;;
-            ;; NOTE: It is assumed that [i] must be on [0, word-size-bits - 1].
-            (let* ([base (process-argument dst #:as 'register)]
-                   [shifted (truncate-integer/unsigned (arithmetic-shift base i))]
-                   [new-registers (register-set/truncate registers dst shifted)]
-                   [set-carry? (not (= 0 (bitwise-and (arithmetic-shift (arithmetic-shift 1 word-size-bits) (- i))
-                                                      base)))]
-                   [set-overflow? (and (= 1 i)
-                                       (not (or (and      set-carry?  (not (= 0 (bitwise-and sign-mask shifted))))
-                                                (and (not set-carry?)      (= 0 (bitwise-and sign-mask shifted))))))]
-                   [new-flags (make-flags #:overflow set-overflow?
-                                          #:carry set-carry?)])
-              (make-step-state #:with-flags new-flags
-                               #:with-registers new-registers))]
-           [(Sar dst i)
-            ;; dst = dst >> i
-            ;;
-            ;; NOTE: It is assumed that [i] must be on [0, word-size-bits - 1].
-            (let* ([base (process-argument dst #:as 'register)]
-                   [msb? (not (= 0 (bitwise-and sign-mask base)))]
-                   [shifted (arithmetic-shift base (- i))]
-                   [masked (if msb?
-                               (bitwise-ior shifted (make-mask (- i)))
-                               shifted)]
-                   [new-registers (register-set/truncate registers dst masked)]
-                   [set-carry? (not (= 0 (bitwise-and (arithmetic-shift 1 (- i 1))
-                                                      base)))]
-                   [new-flags (make-flags #:carry set-carry?)])
-              (make-step-state #:with-flags new-flags
-                               #:with-registers new-registers))]
+         [(Not x)
+          ;; x = !x
+          (let* ([base (process-argument x #:as 'register)]
+                 [negated (bitwise-not base)]
+                 [new-registers (register-set/truncate registers x negated)])
+            (make-step-state #:with-registers new-registers))]
+         [(Add dst src)
+          ;; dst = dst + src
+          (do-arith dst src a86:add)]
+         [(Sub dst src)
+          ;; dst = dst - src
+          (do-arith dst src a86:sub)]
+         [(And dst src)
+          ;; dst = dst & src
+          (do-arith dst src a86:and)]
+         [(Or dst src)
+          ;; dst = dst | src
+          (do-arith dst src a86:ior)]
+         [(Xor dst src)
+          ;; dst = dst ^ src
+          (do-arith dst src a86:xor)]
+         [(Cmp a1 a2)
+          ;; % update flags according to [a1 - a2].
+          (let*-values ([(arg1) (process-argument a1 #:as '(register offset))]
+                        [(arg2) (process-argument a2 #:as '(register offset integer))]
+                        [(_ new-flags) (a86:sub arg1 arg2)])
+            (make-step-state #:with-flags new-flags))]
+         [(Sal dst i)
+          ;; dst = dst << i
+          ;;
+          ;; NOTE: It is assumed that [i] must be on [0, word-size-bits - 1].
+          (let* ([base (process-argument dst #:as 'register)]
+                 [shifted (truncate-integer/unsigned (arithmetic-shift base i))]
+                 [new-registers (register-set/truncate registers dst shifted)]
+                 [set-carry? (not (= 0 (bitwise-and (arithmetic-shift (arithmetic-shift 1 word-size-bits) (- i))
+                                                    base)))]
+                 [set-overflow? (and (= 1 i)
+                                     (not (or (and      set-carry?  (not (= 0 (bitwise-and sign-mask shifted))))
+                                              (and (not set-carry?)      (= 0 (bitwise-and sign-mask shifted))))))]
+                 [new-flags (make-flags #:overflow set-overflow?
+                                        #:carry set-carry?)])
+            (make-step-state #:with-flags new-flags
+                             #:with-registers new-registers))]
+         [(Sar dst i)
+          ;; dst = dst >> i
+          ;;
+          ;; NOTE: It is assumed that [i] must be on [0, word-size-bits - 1].
+          (let* ([base (process-argument dst #:as 'register)]
+                 [msb? (not (= 0 (bitwise-and sign-mask base)))]
+                 [shifted (arithmetic-shift base (- i))]
+                 [masked (if msb?
+                             (bitwise-ior shifted (make-mask (- i)))
+                             shifted)]
+                 [new-registers (register-set/truncate registers dst masked)]
+                 [set-carry? (not (= 0 (bitwise-and (arithmetic-shift 1 (- i 1))
+                                                    base)))]
+                 [new-flags (make-flags #:carry set-carry?)])
+            (make-step-state #:with-flags new-flags
+                             #:with-registers new-registers))]
 
-           [(Jmp t)
-            ;; % unconditionally set the instruction pointer to [t].
-            (jump-with-condition t #t)]
-           [(Je t)
-            ;; % jump to [t] when [Cmp a1 a2] indicates [a1 = a2].
-            (jump-with-condition t flags-e?)]
-           [(Jne t)
-            ;; % jump to [t] when [Cmp a1 a2] indicates [a1 <> a2].
-            (jump-with-condition t flags-ne?)]
-           [(Jl t)
-            ;; % jump to [t] when [Cmp a1 a2] indicates [a1 < a2].
-            (jump-with-condition t flags-l?)]
-           [(Jle t)
-            ;; % jump to [t] when [Cmp a1 a2] indicates [a1 <= a2].
-            (jump-with-condition t flags-le?)]
-           [(Jg t)
-            ;; % jump to [t] when [Cmp a1 a2] indicates [a1 > a2].
-            (jump-with-condition t flags-g?)]
-           [(Jge t)
-            ;; % jump to [t] when [Cmp a1 a2] indicates [a1 >= a2].
-            (jump-with-condition t flags-ge?)]
-           [(Jo t)
-            ;; % jump to [t] when [Cmp a1 a2] sets the overflow flag.
-            (jump-with-condition t flags-o?)]
-           [(Jno t)
-            ;; % jump to [t] when [Cmp a1 a2] unsets the overflow flag.
-            (jump-with-condition t flags-no?)]
-           [(Jc t)
-            ;; % jump to [t] when [Cmp a1 a2] sets the carry flag.
-            (jump-with-condition t flags-c?)]
-           [(Jnc t)
-            ;; % jump to [t] when [Cmp a1 a2] unsets the carry flag.
-            (jump-with-condition t flags-nc?)]
+         [(Jmp t)
+          ;; % unconditionally set the instruction pointer to [t].
+          (jump-with-condition t #t)]
+         [(Je t)
+          ;; % jump to [t] when [Cmp a1 a2] indicates [a1 = a2].
+          (jump-with-condition t flags-e?)]
+         [(Jne t)
+          ;; % jump to [t] when [Cmp a1 a2] indicates [a1 <> a2].
+          (jump-with-condition t flags-ne?)]
+         [(Jl t)
+          ;; % jump to [t] when [Cmp a1 a2] indicates [a1 < a2].
+          (jump-with-condition t flags-l?)]
+         [(Jle t)
+          ;; % jump to [t] when [Cmp a1 a2] indicates [a1 <= a2].
+          (jump-with-condition t flags-le?)]
+         [(Jg t)
+          ;; % jump to [t] when [Cmp a1 a2] indicates [a1 > a2].
+          (jump-with-condition t flags-g?)]
+         [(Jge t)
+          ;; % jump to [t] when [Cmp a1 a2] indicates [a1 >= a2].
+          (jump-with-condition t flags-ge?)]
+         [(Jo t)
+          ;; % jump to [t] when [Cmp a1 a2] sets the overflow flag.
+          (jump-with-condition t flags-o?)]
+         [(Jno t)
+          ;; % jump to [t] when [Cmp a1 a2] unsets the overflow flag.
+          (jump-with-condition t flags-no?)]
+         [(Jc t)
+          ;; % jump to [t] when [Cmp a1 a2] sets the carry flag.
+          (jump-with-condition t flags-c?)]
+         [(Jnc t)
+          ;; % jump to [t] when [Cmp a1 a2] unsets the carry flag.
+          (jump-with-condition t flags-nc?)]
 
-           [(Mov dst src)
-            ;; dst = src
-            (move-with-condition dst src #t)]
-           [(Cmove dst src)
-            ;; dst = src  % when [Cmp a1 a2] indicates [a1 = a2].
-            (move-with-condition dst src flags-e?)]
-           [(Cmovne dst src)
-            ;; dst = src  % when [Cmp a1 a2] indicates [a1 <> a2].
-            (move-with-condition dst src flags-ne?)]
-           [(Cmovl dst src)
-            ;; dst = src  % when [Cmp a1 a2] indicates [a1 < a2].
-            (move-with-condition dst src flags-l?)]
-           [(Cmovle dst src)
-            ;; dst = src  % when [Cmp a1 a2] indicates [a1 <= a2].
-            (move-with-condition dst src flags-le?)]
-           [(Cmovg dst src)
-            ;; dst = src  % when [Cmp a1 a2] indicates [a1 > a2].
-            (move-with-condition dst src flags-g?)]
-           [(Cmovge dst src)
-            ;; dst = src  % when [Cmp a1 a2] indicates [a1 >= a2].
-            (move-with-condition dst src flags-ge?)]
-           [(Cmovo  dst src)
-            ;; dst = src  % when [Cmp a1 a2] sets the overflow flag.
-            (move-with-condition dst src flags-o?)]
-           [(Cmovno dst src)
-            ;; dst = src  % when [Cmp a1 a2] unsets the overflow flag.
-            (move-with-condition dst src flags-no?)]
-           [(Cmovc dst src)
-            ;; dst = src  % when [Cmp a1 a2] sets the carry flag.
-            (move-with-condition dst src flags-c?)]
-           [(Cmovnc dst src)
-            ;; dst = src  % when [Cmp a1 a2] unsets the carry flag.
-            (move-with-condition dst src flags-nc?)]
+         [(Mov dst src)
+          ;; dst = src
+          (move-with-condition dst src #t)]
+         [(Cmove dst src)
+          ;; dst = src  % when [Cmp a1 a2] indicates [a1 = a2].
+          (move-with-condition dst src flags-e?)]
+         [(Cmovne dst src)
+          ;; dst = src  % when [Cmp a1 a2] indicates [a1 <> a2].
+          (move-with-condition dst src flags-ne?)]
+         [(Cmovl dst src)
+          ;; dst = src  % when [Cmp a1 a2] indicates [a1 < a2].
+          (move-with-condition dst src flags-l?)]
+         [(Cmovle dst src)
+          ;; dst = src  % when [Cmp a1 a2] indicates [a1 <= a2].
+          (move-with-condition dst src flags-le?)]
+         [(Cmovg dst src)
+          ;; dst = src  % when [Cmp a1 a2] indicates [a1 > a2].
+          (move-with-condition dst src flags-g?)]
+         [(Cmovge dst src)
+          ;; dst = src  % when [Cmp a1 a2] indicates [a1 >= a2].
+          (move-with-condition dst src flags-ge?)]
+         [(Cmovo  dst src)
+          ;; dst = src  % when [Cmp a1 a2] sets the overflow flag.
+          (move-with-condition dst src flags-o?)]
+         [(Cmovno dst src)
+          ;; dst = src  % when [Cmp a1 a2] unsets the overflow flag.
+          (move-with-condition dst src flags-no?)]
+         [(Cmovc dst src)
+          ;; dst = src  % when [Cmp a1 a2] sets the carry flag.
+          (move-with-condition dst src flags-c?)]
+         [(Cmovnc dst src)
+          ;; dst = src  % when [Cmp a1 a2] unsets the carry flag.
+          (move-with-condition dst src flags-nc?)]
 
-           [(Lea dst l)
-            (let ([ea (hash-ref labels->addresses l)])
-              (cond
-                [(register? dst)
-                 ;; dst = address-of(l)
-                 (make-step-state #:with-registers (register-set/truncate registers dst ea))]
-                [(offset? dst)
-                 ;; memory[dst] = address-of(l)
-                 (memory-set! (address-from-offset dst) ea)
-                 (make-step-state)]))]
-           [_
-            (raise-user-error 'step
-                              "unrecognized instruction ~v at address ~a"
-                              current-instruction
-                              ip)])))]))
+         [(Lea dst l)
+          (let ([ea (hash-ref labels->addresses l)])
+            (cond
+              [(register? dst)
+               ;; dst = address-of(l)
+               (make-step-state #:with-registers (register-set/truncate registers dst ea))]
+              [(offset? dst)
+               ;; memory[dst] = address-of(l)
+               (memory-set! (address-from-offset dst) ea)
+               (make-step-state)]))]
+         [_
+          (raise-user-error 'step
+                            "unrecognized instruction ~v at address ~a"
+                            current-instruction
+                            ip)]))]))

@@ -42,7 +42,8 @@
 ;; system for understanding rather than experimentation. But I would very much
 ;; like to rewrite it all to handle this additional functionality at some point.
 
-(provide initialize-emulator
+(provide current-emulator
+         initialize-emulator
          emulator?
          emulator-step!
          emulator-step-count
@@ -60,11 +61,14 @@
 
          "memory.rkt"
          "program.rkt"
-         "step.rkt")
+         "step.rkt"
+         "state.rkt")
 
 (module+ private
   (provide (struct-out Emulator)
            emulator-state))
+
+(define current-emulator (make-parameter #f))
 
 (struct Emulator ([states        #:mutable] ;; [Vectorof StepState?]
                   [current-index #:mutable] ;; integer?
