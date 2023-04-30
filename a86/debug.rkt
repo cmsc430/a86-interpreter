@@ -3,6 +3,8 @@
 (provide debug-on?
          debug-on!
          debug-off!
+         debug-verbosity
+         set-verbosity!
          begin/debug
          define/debug
          debug)
@@ -31,6 +33,9 @@
 (define (debug-on!) (debug-on? #t))
 ;; Disables debugging.
 (define (debug-off!) (debug-on? #f))
+
+(define debug-verbosity (make-parameter 0))
+(define (set-verbosity! v) (debug-verbosity v))
 
 (begin-for-syntax
   (define-syntax-class debug-fmt-spec
@@ -70,6 +75,9 @@
 (define-syntax (debug stx)
   (syntax-parse stx
     [(_ s:str args:expr ...)
-     #'(when (debug-on?)
+     #'(when (and (debug-on?)
+                  (or (< (debug-current-depth) (debug-verbosity))
+                      (< (debug-verbosity) 0)))
          (display (make-string (* debug-indentation-amount (debug-current-depth)) #\space))
-         (displayln (format s args ...)))]))
+         (parameterize ([debug-current-depth (add1 (debug-current-depth))])
+           (displayln (format s args ...))))]))
