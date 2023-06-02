@@ -23,6 +23,8 @@
          heap-allocate-space!
          heap-free-space!
 
+         in-memory-section
+
          debug-memory-section)
 
 (require "../debug.rkt"
@@ -427,6 +429,54 @@
               [new-word1 (bitwise-ior word1 value1)])
          (section-set! section offset tick new-word0)
          (section-set! section (add1 offset) tick new-word1))])))
+
+;; A stream for iterating over the contents of the indicated section. Each step
+;; produces a pair containing the address and the contents of memory at that
+;; address.
+;;
+;; The [order] can be specified as one of the following:
+;;
+;;   'default       The order specified by the section's definition.
+;;   'reversed      The opposite of the result of ['default] ordering.
+;;   'ascending     From the low address to the high address.
+;;   'descending    From the high address to the low address.
+;;
+;; If [exit-early?] is not [#f], iteration will prematurely halt when an address
+;; is checked that has not been written to. Otherwise, iteration will continue
+;; over the entire section.
+(define (in-memory-section memory
+                           section-name
+                           #:order [order 'default]
+                           #:exit-early? [exit-early? #f])
+  (let* ([hi-addr (address-range-hi memory section-name)]
+         [lo-addr (address-range-lo memory section-name)]
+         [step (cond
+                 [(or (eq? order 'ascending)
+                      (and (eq? order 'default)
+                           (memq section-name upward-sections))
+                      (and (eq? order 'reversed)
+                           (memq section-name downward-sections)))
+                  8]
+                 [(or (eq? order 'descending)
+                      (and (eq? order 'default)
+                           (memq section-name downward-sections))
+                      (and (eq? order 'reversed)
+                           (memq section-name upward-sections)))
+                  -8])]
+         [from-addr (if (positive? step)
+                        lo-addr
+                        hi-addr)]
+         [to-addr (if (positive? step)
+                      hi-addr
+                      lo-addr)])
+    (parameterize ([section-ref-failure-result (if exit-early?
+                                                   #f
+                                                   (section-ref-failure-result))])
+      (for/stream ([address (in-inclusive-range from-addr to-addr step)]
+                   #:break (and exit-early?
+                                (eq? #f (memory-ref memory address))))
+        (cons address
+              (memory-ref memory address))))))
 
 (define (debug-memory-section memory section-name)
   (begin/debug
