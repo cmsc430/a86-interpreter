@@ -2,7 +2,7 @@
 
 (provide fresh-region-state
          current-region-state
-         regions:redraw-all!
+         call-all
          regions:selected
          regions:select!
          regions:select-next!
@@ -27,9 +27,9 @@
 
 (define current-region-state (make-parameter #f))
 
-(define (regions:redraw-all!)
+(define (call-all method-name . args)
   (for ([r (in-list (current-regions))])
-    (call r 'redraw!)))
+    (apply call r method-name args)))
 
 (define (current-regions)
   (region-state-regions (current-region-state)))

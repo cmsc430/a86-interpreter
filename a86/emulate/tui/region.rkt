@@ -71,26 +71,21 @@
 ;; uninitialized, if the region does not have a field with the indicated name,
 ;; or if the region does have a field with this name but the field is
 ;; uninitialized.
-(define-syntax (get stx)
-  (syntax-parse stx
-    [(_ r field-id)
-     #'(begin
-         (unless r
-           (error 'get "region not initialized: ~a" 'r))
-         (unless (region? r)
-           (error 'get "not a region: ~v" r))
-         (match (hash-ref (region-elements-hash r) field-id 'no-field)
-           [(region-field v) v]
-           ['no-field
-            (error 'get
-                   "field not defined for region ~a: ~a"
-                   'r
-                   field-id)]
-           [#f
-            (error 'get
-                   "field not initialized for region ~a: ~a"
-                   'r
-                   field-id)]))]))
+(define (get r field-id)
+  (unless r
+    (error 'get "region not initialized: ~a" (object-name r)))
+  (match (hash-ref (region-elements-hash r) field-id 'no-field)
+    [(region-field v) v]
+    ['no-field
+     (error 'get
+            "field not defined for region ~a: ~a"
+            (object-name r)
+            field-id)]
+    [#f
+     (error 'get
+            "field not initialized for region ~a: ~a"
+            (object-name r)
+            field-id)]))
 
 ;; Dynamically calls a method within a region. Raises an error if the first
 ;; argument is not a region, if the argument is a region but the region is
@@ -100,19 +95,16 @@
 ;; syntax will not be parameterized within the anonymous function being
 ;; invoked. I think the anonymous functions need to be created with the
 ;; parameterization, rather than the prefixed method functions.
-(define-syntax (call stx)
-  (syntax-parse stx
-    [(_ r method-id args ...)
-     #'(begin
-         (unless r
-           (error 'call "region not initialized: ~a" 'r))
-         (match (hash-ref (region-elements-hash r) method-id 'no-method)
-           [(region-method f) (f args ...)]
-           ['no-method
-            (error 'call
-                   "method not defined for region ~a: ~a"
-                   'r
-                   method-id)]))]))
+(define (call r method-id . args)
+  (unless r
+    (error 'call "region not initialized: ~a" (object-name r)))
+  (match (hash-ref (region-elements-hash r) method-id 'no-method)
+    [(region-method f) (apply f args)]
+    ['no-method
+     (error 'call
+            "method not defined for region ~a: ~a"
+            (object-name r)
+            method-id)]))
 
 ;; Answers whether the given region has an element with the indicated name,
 ;; which should be given as a symbol.
@@ -430,6 +422,8 @@
      #:with prefixed-region-id                  (make-prefixed-id #'id #'region)
      #:with prefixed-coords                     (make-prefixed-id #'id #'coords)
      #:with prefixed-size                       (make-prefixed-id #'id #'size)
+     #:with prefixed-width                      (make-prefixed-id #'id #'width)
+     #:with prefixed-height                     (make-prefixed-id #'id #'height)
      #:with prefixed-initialize!                (make-prefixed-id #'id #'initialize!)
      #:with prefixed-uninitialized-element-hash (make-prefixed-id #'id #'uninitialized-element-hash)
 
@@ -539,6 +533,10 @@
           ;; only expose the specific things desired.
           (module prefixed-module-id racket/base
             (provide prefixed-region-id ;; TODO: Remove.
+                     prefixed-coords
+                     prefixed-size
+                     prefixed-width
+                     prefixed-height
                      prefixed-initialize!
                      prefixed-element-id ...)
 
@@ -608,10 +606,6 @@
                     (match (regions:find-empty-rectangle test-width test-height)
                       [#f (error 'prefixed-initialize! "unable to find empty space for region ~v" 'id)]
                       [(list from-x from-y to-x to-y)
-                       (term:set-current-pos! 150 1)
-                       (term:display
-                        "found space for region! (~v, ~v) to (~v, ~v)"
-                        from-x from-y to-x to-y)
                        (let ([r (region 'id from-x from-y to-x to-y
                                         prefixed-uninitialized-element-hash)])
                          (set! prefixed-region-id r)
@@ -623,7 +617,31 @@
                                                'no-init-field-id))
                 (error 'prefixed-initialize! "field not initialized: ~a" 'no-init-field-id)) ...)
 
-            (define-syntax prefixed-coords
+            (define-syntax (make-identifier-accessor stx)
+              (syntax-parse stx
+                #:disable-colon-notation
+                [(_ (name expr))
+                 #'(define-syntax name
+                     (λ (stx)
+                       (syntax-case stx ()
+                         [val
+                          (identifier? #'val)
+                          #'(syntax-parameterize (parameterized-elements ...)
+                              expr)])))]))
+
+            (define-syntax (make-identifier-accessors stx)
+              (syntax-parse stx
+                [(_ pair (... ...))
+                 #'(begin
+                     (make-identifier-accessor pair) (... ...))]))
+
+            (make-identifier-accessors
+             [prefixed-coords (region-coords this-region)]
+             [prefixed-size   (region-size this-region)]
+             [prefixed-width  (car prefixed-size)]
+             [prefixed-height (cdr prefixed-size)])
+
+            #;(define-syntax prefixed-coords
               (λ (stx)
                 (syntax-case stx ()
                   [val
@@ -631,7 +649,7 @@
                    #'(syntax-parameterize (parameterized-elements ...)
                        (region-coords this-region))])))
 
-            (define-syntax prefixed-size
+            #;(define-syntax prefixed-size
               (λ (stx)
                 (syntax-case stx ()
                   [val
@@ -642,13 +660,24 @@
             ;; Field IDs are actually special syntax so they can be used as
             ;; identifiers rather than functions. These prefixed identifiers are
             ;; just wrappers for the getter functions defined below.
-            (define-syntax prefixed-all-field-id
-              (λ (stx)
-                (syntax-case stx ()
-                  [val
-                   (identifier? #'val)
-                   #'(syntax-parameterize (parameterized-elements ...)
-                       (get-field-id))]))) ...
+            ;;
+            ;; TODO: Similarly to the note for [prefixed-method-id ...] below, I
+            ;; think forbidding the use of fields as functions in an application
+            ;; is a missed opportunity. A method might be written to set a field
+            ;; to the value of an anonymous function, and as it is this would
+            ;; require something like a local [let] to bind the value and then
+            ;; apply that rather than just using the field in application.
+            ;;
+            ;; TODO: This perhaps suggests that methods and fields are not so
+            ;; different, but I'm unsure whether it makes sense to unify them
+            ;; under a single interface. For now, separate [define-field] and
+            ;; [define-method] syntaxes seems reasonable.
+            (define-syntax (prefixed-all-field-id stx)
+              (syntax-case stx ()
+                [val
+                 (identifier? #'val)
+                 #'(syntax-parameterize (parameterized-elements ...)
+                     (get-field-id))])) ...
 
             ;; TODO: Should this be implemented as primitive functionality
             ;; instead of relying on [get]?
@@ -656,11 +685,23 @@
 
             ;; The exported method names are prefixed, and simply wrap calls to
             ;; the [call] functionality.
-            (define (prefixed-method-id method-param ...)
+            ;;
+            ;; TODO: I think forbidding references to methods as identifiers is
+            ;; a mistake. It might be better to just have them return the
+            ;; un-applied anonymous function.
+            (define-syntax (prefixed-method-id stx)
+              (syntax-parse stx
+                [(_ args (... ...))
+                 #'(call prefixed-region-id 'method-id args (... ...))])
+
+              #;(syntax-case stx ()
+                [(_ args (... ...))
+                 (call prefixed-region-id 'method-id args (... ...))])) ...
+            #;(define (prefixed-method-id method-param ...)
               (syntax-parameterize (parameterized-elements ...)
                 ;; TODO: Should this be implemented as primitive functionality
                 ;; instead of relying on [call]?
-                (call prefixed-region-id 'method-id method-param ...))) ...
+                (call prefixed-region-id 'method-id method-param ...))) #;...
             ) ;; End of module definition.
           ;; We require and provide from the module automatically.
           require-form

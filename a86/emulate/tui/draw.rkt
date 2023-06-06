@@ -15,7 +15,7 @@
          in-border
          in-interior
          parameterize-bounds
-         draw:box
+         draw:border
          draw:fill-box)
 
 (require "term.rkt"
@@ -160,31 +160,51 @@
                                                    #:skip-border? #t)])])
          body ...)]))
 
-(define (draw:box from-x from-y to-x to-y
-                  #:style [style 'light])
+(define (draw:border from-x from-y to-x to-y
+                     #:style [style 'light])
   (term:with-saved-pos
    (parameterize-bounds
     from-x from-y to-x to-y
-    (let ([style-hash (box-style style)])
-      (for ([(x y) (in-border)])
-        (let* ([s (cond
-                    [(or (is-top-edge? x y)
-                         (is-bottom-edge? x y))    'h]
-                    [(or (is-left-edge? x y)
-                         (is-right-edge? x y))     'v]
-                    [(is-top-left-corner? x y)     'dr]
-                    [(is-top-right-corner? x y)    'dl]
-                    [(is-bottom-left-corner? x y)  'ur]
-                    [(is-bottom-right-corner? x y) 'ul])]
-               [c (hash-ref style-hash s)])
-          (term:set-current-pos! x y)
-          (term:display c)))))))
+    (if (eq? style 'annotated)
+        ;; The annotated border has to be handled a bit differently.
+        (begin
+          (term:set-mode-inverse)
+          (for ([(x y) (in-border)])
+            (term:set-current-pos! x y)
+            (cond
+              [(is-top-left-corner? x y)
+               (term:display "1")]
+              [(and (or (is-top-edge? x y)
+                        (is-top-right-corner? x y))
+                    (even? (- x from-x)))
+               (term:display (~r (remainder (add1 (- x from-x)) 10)))]
+              [(and (or (is-left-edge? x y)
+                        (is-bottom-left-corner? x y))
+                    (even? (- y from-y)))
+               (term:display (~r (remainder (add1 (- y from-y)) 10)))]
+              [else
+               (term:display " ")]))
+          (term:set-mode-normal))
+        ;; Regular borders can all be handled the same.
+        (let ([style-hash (box-style style)])
+          (for ([(x y) (in-border)])
+            (let* ([s (cond
+                        [(or (is-top-edge? x y)
+                             (is-bottom-edge? x y))    'h]
+                        [(or (is-left-edge? x y)
+                             (is-right-edge? x y))     'v]
+                        [(is-top-left-corner? x y)     'dr]
+                        [(is-top-right-corner? x y)    'dl]
+                        [(is-bottom-left-corner? x y)  'ur]
+                        [(is-bottom-right-corner? x y) 'ul])]
+                   [c (hash-ref style-hash s)])
+              (term:set-current-pos! x y)
+              (term:display c))))))))
 
 (define (draw:fill-box from-x from-y to-x to-y [c " "])
   (term:with-saved-pos
    (parameterize-bounds
     from-x from-y to-x to-y
-    (for ([(x y) (in-border)]
-          #:when (is-left-edge? x y))
+    (for ([(x y) (in-bounds)])
       (term:set-current-pos! x y)
       (term:display c)))))
