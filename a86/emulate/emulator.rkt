@@ -99,22 +99,26 @@
          [_      (debug "initial instruction pointer set: ~v" ip)]
          [addrs  (compute-label-addresses prog ip)]
          [_      (debug "label addresses computed")]
-         [state  (StepState 0 ip fresh-flags (register-set* fresh-registers
-                                                            'rsp (lesser-word-aligned-address
-                                                                  (address-range-hi mem stack))
-                                                            'rdi (address-range-lo mem heap)))]
+         [state  (StepState 0
+                            ip
+                            fresh-flags
+                            (register-set* fresh-registers
+                                           'rsp (lesser-word-aligned-address
+                                                 (address-range-hi mem stack))
+                                           'rdi (address-range-lo mem heap)))]
          [_      (debug "first state initialized")]
          [states (make-vector states-size-increment #f)])
     (vector-set! states 0 state)
     (Emulator states 0 mem addrs)))
 
-(define (emulator-state emulator [step #f])
-  (match emulator
+(define (emulator-state [emulator #f] [step #f])
+  (match (or emulator (current-emulator))
     [(Emulator states index _ _)
      (vector-ref states (or step
                             index))]))
 
-(define (emulator-step! emulator)
+(define (emulator-step! [emulator #f])
+  (set! emulator (or emulator (current-emulator)))
   (match emulator
     [(Emulator states old-index memory labels->addresses)
      (let* ([new-index (add1 old-index)]
@@ -142,7 +146,8 @@
 ;; The maximum number of steps can be parameterized.
 (define emulator-step-count (make-parameter 1000))
 
-(define (emulator-multi-step! emulator)
+(define (emulator-multi-step! [emulator #f])
+  (set! emulator (or emulator (current-emulator)))
   (debug "labels->addresses:")
   (for ([(label address) (in-hash (Emulator-labels->addresses emulator))])
     (debug "  ~v\t~a" label (format-word address 'hex)))
@@ -165,23 +170,36 @@
 
 ;; NOTE: Cannot step backwards past the first state.
 ;; TODO: Should this raise an exception instead?
-(define (emulator-step-back! emulator)
+(define (emulator-step-back! [emulator #f])
+  (set! emulator (or emulator (current-emulator)))
   (set-Emulator-current-index!
    emulator
    (max (sub1 (Emulator-current-index emulator))
         0)))
 
-(define (emulator->flags emulator)
-  (StepState-flags (emulator-state emulator)))
+(define (emulator->flags [emulator #f])
+  (StepState-flags (emulator-state (or emulator (current-emulator)))))
 
-(define (emulator->registers emulator)
-  (StepState-registers (emulator-state emulator)))
+(define (emulator->registers [emulator #f])
+  (StepState-registers (emulator-state (or emulator (current-emulator)))))
 
-(define (emulator-flag-ref emulator flag)
-  (hash-ref (emulator->flags emulator) flag))
+(define emulator-flag-ref
+  (case-lambda
+    [(flag)
+     (emulator-flag-ref (current-emulator) flag)]
+    [(emulator flag)
+     (hash-ref (emulator->flags emulator) flag)]))
 
-(define (emulator-register-ref emulator register)
-  (register-ref (emulator->registers emulator) register))
+(define emulator-register-ref
+  (case-lambda
+    [(register)
+     (emulator-register-ref (current-emulator) register)]
+    [(emulator register)
+     (register-ref (emulator->registers emulator) register)]))
 
-(define (emulator-memory-ref emulator address)
-  (memory-ref (Emulator-memory emulator) address))
+(define emulator-memory-ref
+  (case-lambda
+    [(address)
+     (emulator-memory-ref (current-emulator) address)]
+    [(emulator address)
+     (memory-ref (Emulator-memory emulator) address)]))
