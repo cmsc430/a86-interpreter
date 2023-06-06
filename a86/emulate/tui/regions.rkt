@@ -2,6 +2,7 @@
 
 (require "../memory.rkt"
          "draw.rkt"
+         "exn.rkt"
          "region.rkt"
          "state.rkt")
 
@@ -28,7 +29,8 @@
 
   (define-method (write-state!)
     (term:set-current-pos! left-col state-row)
-    (term:display #:width (sub1 this-region:width) (~v (current-emulator-state))))
+    (term:display #:width (sub1 this-region:width) (~v (current-emulator-state)))
+    (term:set-current-pos! (sub1 left-col) info-row))
 
   #;(define-method (write-key!)
     (set-pos!)
@@ -180,7 +182,8 @@
     ;;        i. Rewrite the currently selected row as a not-selected row.
     ;;       ii. Rewrite the newly selected row as a selected row.
     (let* ([curr-addr+instr (list-ref instructions-list current-instr-idx)]
-           [curr-instr-row (- current-instr-idx instruction-window-lo)]
+           [curr-instr-row (+ first-main-row
+                              (- current-instr-idx instruction-window-lo))]
            [next-instr-idx (hash-ref address->instruction-index
                                      (current-instruction-pointer))]
            [next-addr+instr (list-ref instructions-list next-instr-idx)]
@@ -204,8 +207,13 @@
       ;;   T2    Interior third
       ;;   T3    Bottom third
       (cond
-        ;; NI is either in T2 or both NI and PI are in T1. No shift is needed.
-        [(or (in-int-third? new-instr-row)
+        ;; In some conditions, we don't shift:
+        ;;
+        ;;   * Fewer instructions than the height of the window.
+        ;;   * NI is already in T2.
+        ;;   * NI and PI are in T1.
+        [(or (<= (length instructions-list) main-height)
+             (in-int-third? new-instr-row)
              (and (in-top-third? curr-instr-row)
                   (in-top-third? new-instr-row)))
          ;; Do not redraw the whole window.
@@ -246,7 +254,7 @@
                                       (- instruction-window-hi next-instr-idx)))))]
         [else
          (error 'refresh-state! "could not determine new instruction location")])
-      ;; Correct shifts too far.
+      ;; Correct if shifts are too far.
       (set! instruction-window-lo (max instruction-window-lo 0))
       (set! instruction-window-hi (min instruction-window-hi (sub1 (length instructions-list))))
       ;; Update the current information.
