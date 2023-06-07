@@ -3,9 +3,9 @@
 (require "exn.rkt"
          "functionality.rkt"
          "term.rkt"
-         "regions.rkt"
          "region-state.rkt"
-         "state.rkt")
+         "state.rkt"
+         "regions/main.rkt")
 
 (with-example-state
   (with-term

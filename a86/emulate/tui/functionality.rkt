@@ -7,9 +7,9 @@
          default-keymap)
 
 (require "exn.rkt"
-         "regions.rkt"
          "region-state.rkt"
-         "state.rkt")
+         "state.rkt"
+         "regions/main.rkt")
 
 (define tui-loop-break
   (make-parameter
