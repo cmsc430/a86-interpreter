@@ -145,30 +145,35 @@
   (define-method (write-header!)
     (term:with-saved-pos
      (term:set-current-pos! left-select-col header-row)
-     (term:display #:underline
-                   #:width (- this-region:width 2)
-                   (string-append
-                    (make-string select-col-width #\space)
-                    (~a addr-heading #:width addr-col-width)
-                    (make-string column-gap #\space)
-                    (~a instr-heading #:width instr-col-width)))))
+     (term:with-mode
+      'underline
+      (term:display #:width (- this-region:width 2)
+                    (string-append
+                     (make-string select-col-width #\space)
+                     (~a addr-heading #:width addr-col-width)
+                     (make-string column-gap #\space)
+                     (~a instr-heading #:width instr-col-width))))))
 
   (define-method (write-row! row selected? addr instr)
     (term:with-saved-pos
      (term:set-current-pos! left-select-col row)
-     (term:set-mode-normal)
-     (if selected?
-         (begin
-           (term:display (~a select-indicator
-                             #:width select-col-width
-                             #:align 'center))
-           (term:set-mode-inverse))
-         (term:display (make-string select-col-width #\space)))
-     (term:display #:width (- this-region:width 2 select-col-width)
-                   (string-append
-                    (format-addr addr)
-                    (make-string column-gap #\space)
-                    (format-instr instr)))))
+     ;; Always fill the selection column in ['normal] mode.
+     (term:with-mode
+      'normal
+      (term:display (~a (if selected?
+                            select-indicator
+                            (make-string select-col-width #\space))
+                        #:width select-col-width
+                        #:align 'center)))
+     ;; The rest of the row is written in ['inverse] mode if it is "selected",
+     ;; otherwise it is written in the ['normal] mode.
+     (term:with-mode
+      (if selected? 'inverse 'normal)
+      (term:display #:width (- this-region:width 2 select-col-width)
+                    (string-append
+                     (format-addr addr)
+                     (make-string column-gap #\space)
+                     (format-instr instr))))))
 
   (define-method (refresh-state!)
     ;; 1. Figure out which instruction in the instructions list should be

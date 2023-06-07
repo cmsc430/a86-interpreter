@@ -22,6 +22,12 @@
          with-term
          term:with-loop
          ;; Write to the screen.
+         term:set-mode-normal!
+         term:set-mode-inverse!
+         term:set-mode-underline!
+         term:set-mode-blink!
+         term:set-mode-bold!
+         term:with-mode
          term:display
          term:displayln
          ;; Easily perform operations without adjusting the position for the
@@ -33,12 +39,7 @@
                      [charterm:charterm-clear-screen     term:clear-screen]
                      [charterm:charterm-clear-line       term:clear-line]
                      [charterm:charterm-clear-line-left  term:clear-line-left]
-                     [charterm:charterm-clear-line-right term:clear-line-right]
-                     [charterm:charterm-normal           term:set-mode-normal]
-                     [charterm:charterm-inverse          term:set-mode-inverse]
-                     [charterm:charterm-underline        term:set-mode-underline]
-                     [charterm:charterm-blink            term:set-mode-blink]
-                     [charterm:charterm-bold             term:set-mode-bold]))
+                     [charterm:charterm-clear-line-right term:clear-line-right]))
 
 (require racket/stxparam
 
@@ -52,13 +53,14 @@
    row-count
    current-col
    current-row
-   last-key)
+   last-key
+   write-mode)
   #:mutable)
 
 (define current-term-state (make-parameter #f))
 
 (define (term:make-state col-count row-count)
-  (term-state col-count row-count 0 0 #f))
+  (term-state col-count row-count 1 1 #f 'normal))
 
 (define (term:col-count)
   (term-state-col-count (current-term-state)))
@@ -183,28 +185,47 @@
                 (syntax-parameterize ([break (syntax-rules () [(_) (break-id)])])
                   body ...))))))]))
 
+(define write-mode->mode-set-func
+  (hash 'normal    charterm:charterm-normal
+        'inverse   charterm:charterm-inverse
+        'underline charterm:charterm-underline
+        'blink     charterm:charterm-blink
+        'bold      charterm:charterm-bold))
+(define (get-set-mode-func mode)
+  (match (hash-ref write-mode->mode-set-func mode #f)
+    [#f (error 'term:set-mode! "not a recognized write mode: ~v" mode)]
+    [set-mode set-mode]))
+(define (term:set-mode! mode)
+  (let ([set-mode (get-set-mode-func mode)])
+    (set-term-state-write-mode! (current-term-state) mode)
+    (set-mode)))
+(define (term:set-mode-normal!)    (term:set-mode! 'normal))
+(define (term:set-mode-inverse!)   (term:set-mode! 'inverse))
+(define (term:set-mode-underline!) (term:set-mode! 'underline))
+(define (term:set-mode-blink!)     (term:set-mode! 'blink))
+(define (term:set-mode-bold!)      (term:set-mode! 'bold))
+
+(define-syntax (term:with-mode stx)
+  (syntax-parse stx
+    [(_ mode body ... final-body)
+     #'(let ([original-mode (term-state-write-mode (current-term-state))])
+         (term:set-mode! mode)
+         body ...
+         (begin0 final-body
+           (term:set-mode! original-mode)))]))
+
 (define-syntax (term:display stx)
   (syntax-parse stx
-    [(_ (~optional (~or* (~and #:normal    (~bind [mode #'(charterm:charterm-normal)]))
-                         (~and #:inverse   (~bind [mode #'(charterm:charterm-inverse)]))
-                         (~and #:underline (~bind [mode #'(charterm:charterm-underline)]))
-                         (~and #:blink     (~bind [mode #'(charterm:charterm-blink)]))
-                         (~and #:bold      (~bind [mode #'(charterm:charterm-bold)])))
-                   #:defaults ([mode #f]))
-        (~optional (~seq #:width width)
+    [(_ (~optional (~seq #:width width)
                    #:defaults ([width #'#f]))
         str-expr
         ~rest fmt-args)
-     (let ([mode (attribute mode)]
-           [fmt-args (syntax->list (attribute fmt-args))])
-       #`(begin #,@(append (if mode
-                               (list mode)
-                               '())
-                           (list #`(charterm:charterm-display
-                                    #:width width
-                                    #,(if (zero? (length fmt-args))
-                                          #'str-expr
-                                          #`(format str-expr #,@fmt-args)))))))]))
+     (let ([fmt-args (syntax->list (attribute fmt-args))])
+       #`(charterm:charterm-display
+          #:width width
+          #,(if (zero? (length fmt-args))
+                #'str-expr
+                #`(format str-expr #,@fmt-args))))]))
 
 (define-syntax (term:displayln stx)
   (syntax-parse stx

@@ -167,24 +167,23 @@
     from-x from-y to-x to-y
     (if (eq? style 'annotated)
         ;; The annotated border has to be handled a bit differently.
-        (begin
-          (term:set-mode-inverse)
-          (for ([(x y) (in-border)])
-            (term:set-current-pos! x y)
-            (cond
-              [(is-top-left-corner? x y)
-               (term:display "1")]
-              [(and (or (is-top-edge? x y)
-                        (is-top-right-corner? x y))
-                    (even? (- x from-x)))
-               (term:display (~r (remainder (add1 (- x from-x)) 10)))]
-              [(and (or (is-left-edge? x y)
-                        (is-bottom-left-corner? x y))
-                    (even? (- y from-y)))
-               (term:display (~r (remainder (add1 (- y from-y)) 10)))]
-              [else
-               (term:display " ")]))
-          (term:set-mode-normal))
+        (term:with-mode
+         'inverse
+         (for ([(x y) (in-border)])
+           (term:set-current-pos! x y)
+           (cond
+             [(is-top-left-corner? x y)
+              (term:display "1")]
+             [(and (or (is-top-edge? x y)
+                       (is-top-right-corner? x y))
+                   (even? (- x from-x)))
+              (term:display (~r (remainder (add1 (- x from-x)) 10)))]
+             [(and (or (is-left-edge? x y)
+                       (is-bottom-left-corner? x y))
+                   (even? (- y from-y)))
+              (term:display (~r (remainder (add1 (- y from-y)) 10)))]
+             [else
+              (term:display " ")])))
         ;; Regular borders can all be handled the same.
         (let ([style-hash (box-style style)])
           (for ([(x y) (in-border)])
