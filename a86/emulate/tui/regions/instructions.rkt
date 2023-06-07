@@ -6,20 +6,20 @@
          "../state.rkt")
 
 (define-region instructions
-  #:width-spec  25%
+  #:width-spec  60
   #:height-spec available
 
-  (define-field border-style         'none)
-  (define-field column-gap           2)
-  (define-field addr-heading         "Addr")
+  (define-field border-style           'none)
+  (define-field addr-heading          "Addr")
   (define-field instr-heading        "Instr")
-  (define-field select-indicator     "->")
-  (define-field breakpoint-indicator "**")
-  (define-field select-col-width     4)
-  (define-field max-addr-width       0)
-  (define-field addr-col-width       0)
-  (define-field max-instr-width      0)
-  (define-field instr-col-width      0)
+  (define-field select-indicator        "->")
+  (define-field breakpoint-indicator    "**")
+  (define-field column-gap                 2)
+  (define-field select-col-width           4)
+  (define-field max-addr-width             0)
+  (define-field addr-col-width             0)
+  (define-field max-instr-width            0)
+  (define-field instr-col-width            0)
 
   (define-fields
     [instructions-list address->instruction-index current-instr-idx
