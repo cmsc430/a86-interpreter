@@ -48,6 +48,7 @@
   (step!)
   (header:write-state!)
   (instructions:refresh-state!)
+  (registers:write-values!)
   #;(call-all 'refresh-state!))
 
 (define (prev-step)

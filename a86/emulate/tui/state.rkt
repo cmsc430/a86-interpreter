@@ -6,6 +6,8 @@
          current-emulator-state
          current-instruction-pointer
          current-memory
+         current-flags
+         current-registers
          step!
          step-back!
 
@@ -38,6 +40,12 @@
 
 (define (current-memory)
   (Emulator-memory (current-emulator)))
+
+(define (current-flags)
+  (emulator->flags (current-emulator)))
+
+(define (current-registers)
+  (emulator->registers (current-emulator)))
 
 (define (step!)
   (emulator-step! (current-emulator)))

@@ -13,6 +13,7 @@
       ;; Manually initialize the regions one-by-one in the order we want them.
       (header:initialize!)
       (instructions:initialize!)
+      (registers:initialize!)
       ;; Draw all the regions.
       (call-all 'redraw!)
       ;; Set up the initial info.
