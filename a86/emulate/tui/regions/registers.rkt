@@ -11,9 +11,8 @@
   #:height-spec 20  ;; 2 header + 16 registers + 2 border.
 
   (define-field border-style 'none)
-  (define-field name-heading "Name")
-  (define-field name-col-width 4)
-  (define-field value-heading "Value")
+  (define-field heading "Registers")
+  (define-field name-col-width 3)
   (define-field value-width     18)
   (define-field column-gap       2)
   (define-field settings (make-vector 16 'hex))
@@ -31,7 +30,7 @@
        (set! first-main-row (+ 2 header-row))
        (set! left-name-col (add1 from-x))
        (set! left-value-col (+ left-name-col
-                               4
+                               name-col-width
                                column-gap))]))
 
   (define-method (format-value value settings)
@@ -62,11 +61,7 @@
          (term:set-current-pos! left-name-col header-row)
          (term:with-mode
           'underline
-          (term:display #:width (- this-region:width 2)
-                        (string-append
-                         (~a name-heading #:width name-col-width)
-                         (make-string column-gap #\space)
-                         (~a value-heading #:width value-width))))
+          (term:display #:width (- this-region:width 2) heading))
          (for ([register-name (in-list registers/64-bit)]
                [index         (in-naturals)]
                [row           (in-col first-main-row)])
