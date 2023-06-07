@@ -44,15 +44,18 @@
     (error 'delete-key "key not bound in keymap: ~v" keydef))
   (hash-remove! keymap keydef))
 
-(define (next-step)
-  (step!)
+(define (refresh)
   (header:write-state!)
   (instructions:refresh-state!)
-  (registers:write-values!)
-  #;(call-all 'refresh-state!))
+  (registers:write-values!))
+
+(define (next-step)
+  (step!)
+  (refresh))
 
 (define (prev-step)
-  (void))
+  (step-back!)
+  (refresh))
 
 (define default-keymap
   (make-hash
