@@ -1,7 +1,6 @@
 #lang racket
 
-(require "exn.rkt"
-         "functionality.rkt"
+(require "functionality.rkt"
          "term.rkt"
          "region-state.rkt"
          "state.rkt"

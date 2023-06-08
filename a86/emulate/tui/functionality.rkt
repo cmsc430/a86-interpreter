@@ -47,7 +47,8 @@
 (define (refresh)
   (header:write-state!)
   (instructions:refresh-state!)
-  (registers:write-values!))
+  (registers:write-flags!)
+  (registers:write-registers!))
 
 (define (next-step)
   (step!)
