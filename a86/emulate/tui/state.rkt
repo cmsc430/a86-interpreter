@@ -8,6 +8,7 @@
          current-memory
          current-flags
          current-registers
+         current-labels->addresses
          step!
          step-back!
 
@@ -46,6 +47,9 @@
 
 (define (current-registers)
   (emulator->registers (current-emulator)))
+
+(define (current-labels->addresses)
+  (Emulator-labels->addresses (current-emulator)))
 
 (define (step!)
   (emulator-step! (current-emulator)))

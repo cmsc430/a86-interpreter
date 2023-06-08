@@ -6,34 +6,61 @@
          "../state.rkt")
 
 (define-region instructions
-  #:width-spec  60
+  #:width-spec  80
   #:height-spec available
 
-  (define-field border-style           'none)
-  (define-field addr-heading          "Addr")
-  (define-field instr-heading        "Instr")
-  (define-field select-indicator        "->")
-  (define-field breakpoint-indicator    "**")
-  (define-field column-gap                 2)
-  (define-field select-col-width           4)
-  (define-field max-addr-width             0)
-  (define-field addr-col-width             0)
-  (define-field max-instr-width            0)
-  (define-field instr-col-width            0)
+  (define-field border-style                 'none)
+  (define-field heading " Instructions (.text Section)")
+  (define-field select-indicator              "->")
+  (define-field breakpoint-indicator          "**")
+  ;; TODO: Replace individual indicators with this.
+  (define-field indicators (hash 'select     "->"
+                                 'breakpoint "**"))
+  (define-field column-gap                       2)
+  (define-field label-col-width                  0)
+  (define-field max-label-width                  0)
+  (define-field select-col-width                 2)
+  (define-field max-addr-width                   0)
+  (define-field addr-col-width                   0)
+  (define-field max-instr-width                  0)
+  (define-field instr-col-width                  0)
 
   (define-fields
-    [instructions-list address->instruction-index current-instr-idx
-     instruction-window-lo instruction-window-hi header-row first-main-row
-     last-main-row main-height third-main-height interior-third-top-edge-row
-     interior-third-bottom-edge-row top-third-size interior-third-size
-     bottom-third-size left-select-col left-addr-col left-instr-col])
+    [instructions-list
+     address->instruction-index
+     address->label
+     current-instr-idx
+     instruction-window-lo
+     instruction-window-hi
+     header-row
+     first-main-row
+     last-main-row
+     main-height
+     third-main-height
+     interior-third-top-edge-row
+     interior-third-bottom-edge-row
+     top-third-size
+     interior-third-size
+     bottom-third-size
+     first-col
+     left-select-col
+     left-label-col
+     left-addr-col
+     left-instr-col])
 
   (define-pre-init ()
+    (set! address->label
+          (for/hash ([(label addr) (in-hash (current-labels->addresses))])
+            (set! max-label-width
+                  (max max-label-width
+                       (string-length (~a label))))
+            (values addr label)))
+    (set! label-col-width max-label-width)
     (set! address->instruction-index (make-hash))
     (set! instructions-list
           (for/list ([addr+instr (in-memory-section (current-memory) text
                                                     #:order 'descending)]
-                     [index      (in-naturals)])
+                     [index (in-naturals)])
             (match addr+instr
               [(cons address instruction)
                (hash-set! address->instruction-index address index)
@@ -56,31 +83,35 @@
     (set! instruction-window-hi (min (sub1 main-height)
                                      (sub1 (length instructions-list)))))
 
-  (define-method (format-addr addr [width #f])
-    (unless width
-      (set! width (if (positive-integer? max-addr-width)
-                      max-addr-width
-                      1)))
+  (define-method (format-label label [width max-label-width])
+    (~a label #:width width))
+
+  (define-method (format-addr addr [width max-addr-width])
     (format "[0x~a]" (~r addr #:base 16 #:min-width width #:pad-string "0")))
 
-  (define-method (format-instr instr [width #f])
+  (define-method (format-instr instr [width max-instr-width])
     (~v instr #:width width))
 
   (define-method (update-refs!)
     (match this-region:coords
       [(list from-x from-y to-x to-y)
        ;; Set column sizes.
-       (set! left-select-col   (add1 from-x))
-       (set! left-addr-col     (+ left-select-col
-                                  select-col-width))
-       (set! left-instr-col    (+ left-addr-col
-                                  addr-col-width
-                                  column-gap))
+       (set! first-col       (add1 from-x))
+       (set! left-select-col first-col)
+       (set! left-label-col  (+ left-select-col
+                                select-col-width
+                                column-gap))
+       (set! left-addr-col   (+ left-label-col
+                                label-col-width
+                                column-gap))
+       (set! left-instr-col  (+ left-addr-col
+                                addr-col-width
+                                column-gap))
        ;; Calculate row information.
-       (set! header-row        (add1 from-y))
-       (set! first-main-row    (+ 2 header-row))
-       (set! last-main-row     (+ first-main-row (- to-y first-main-row 1)))
-       (set! main-height       (add1 (- last-main-row first-main-row)))
+       (set! header-row     (add1 from-y))
+       (set! first-main-row (+ 2 header-row))
+       (set! last-main-row  (+ first-main-row (- to-y first-main-row 1)))
+       (set! main-height    (add1 (- last-main-row first-main-row)))
        (let-values ([(third-size rem) (quotient/remainder main-height 3)])
          (set! interior-third-top-edge-row    (+ first-main-row
                                                  third-size))
@@ -95,6 +126,11 @@
                                             interior-third-bottom-edge-row))
          (set! third-main-height third-size))]))
 
+  (define-method (write-to-label-col row text)
+    (term:with-saved-pos
+     (term:set-current-pos! left-label-col row)
+     (term:display #:width label-col-width text)))
+
   (define-method (write-to-addr-col row text)
     (term:with-saved-pos
      (term:set-current-pos! left-addr-col row)
@@ -107,33 +143,26 @@
 
   (define-method (write-header!)
     (term:with-saved-pos
-     (term:set-current-pos! left-select-col header-row)
+     (term:set-current-pos! first-col header-row)
      (term:with-mode
       'underline
-      (term:display #:width (- this-region:width 2)
-                    (string-append
-                     (make-string select-col-width #\space)
-                     (~a addr-heading #:width addr-col-width)
-                     (make-string column-gap #\space)
-                     (~a instr-heading #:width instr-col-width))))))
+      (term:display #:width (- this-region:width 2) heading))))
 
   (define-method (write-row! row selected? addr instr)
     (term:with-saved-pos
      (term:set-current-pos! left-select-col row)
-     ;; Always fill the selection column in ['normal] mode.
-     (term:with-mode
-      'normal
-      (term:display (~a (if selected?
-                            select-indicator
-                            (make-string select-col-width #\space))
-                        #:width select-col-width
-                        #:align 'center)))
-     ;; The rest of the row is written in ['inverse] mode if it is "selected",
-     ;; otherwise it is written in the ['normal] mode.
+     ;; The row is written in ['inverse] mode if it is "selected", otherwise it
+     ;; is written in the ['normal] mode.
      (term:with-mode
       (if selected? 'inverse 'normal)
-      (term:display #:width (- this-region:width 2 select-col-width)
+      (term:display #:width (- this-region:width 2)
                     (string-append
+                     (if selected?
+                         select-indicator
+                         (make-string select-col-width #\space))
+                     (make-string column-gap #\space)
+                     (format-label (hash-ref address->label addr ""))
+                     (make-string column-gap #\space)
                      (format-addr addr)
                      (make-string column-gap #\space)
                      (format-instr instr))))))
