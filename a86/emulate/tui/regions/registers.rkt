@@ -11,7 +11,7 @@
   #:height-spec 20  ;; 2 header + 16 registers + 2 border.
 
   (define-field border-style 'none)
-  (define-field heading "Registers")
+  (define-field heading " Registers")
   (define-field name-col-width 3)
   (define-field value-width     18)
   (define-field column-gap       2)
