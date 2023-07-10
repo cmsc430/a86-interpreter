@@ -50,7 +50,8 @@
   #;(header:write-state!)
   (instructions:refresh-state!)
   (registers:write-flags!)
-  (registers:write-registers!))
+  (registers:write-registers!)
+  (memory:update-regions!))
 
 (define (next-step)
   (step!)

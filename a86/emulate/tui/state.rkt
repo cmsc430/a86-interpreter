@@ -12,6 +12,7 @@
          current-flag-ref
          current-register-ref
          current-memory-ref
+         current-transactions
          previous-emulator-state
          previous-instruction-pointer
          previous-flags
@@ -19,6 +20,7 @@
          previous-flag-ref
          previous-register-ref
          previous-memory-ref
+         previous-transactions
          step!
          step-back!
 
@@ -71,6 +73,9 @@
 (define (current-memory-ref address)
   (emulator-memory-ref (current-emulator) address))
 
+(define (current-transactions)
+  (StepState-memory-transactions (current-emulator-state)))
+
 (define (previous-emulator-state)
   (emulator-state (current-emulator) -1))
 
@@ -96,6 +101,9 @@
 
 (define (previous-memory-ref address)
   (emulator-memory-ref (current-emulator) -1 address))
+
+(define (previous-transactions)
+  (StepState-memory-transactions (previous-emulator-state)))
 
 (define (step!)
   (emulator-step! (current-emulator)))
