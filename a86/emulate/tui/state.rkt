@@ -9,12 +9,23 @@
          current-flags
          current-registers
          current-labels->addresses
+         current-flag-ref
+         current-register-ref
+         current-memory-ref
+         previous-emulator-state
+         previous-instruction-pointer
+         previous-flags
+         previous-registers
+         previous-flag-ref
+         previous-register-ref
+         previous-memory-ref
          step!
          step-back!
 
          with-example-state)
 
 (require "../../ast.rkt"
+         "../../exn.rkt"
          "../emulator.rkt"
          "../runtime.rkt"
          "../state.rkt"
@@ -51,6 +62,41 @@
 (define (current-labels->addresses)
   (Emulator-labels->addresses (current-emulator)))
 
+(define (current-flag-ref flag)
+  (emulator-flag-ref (current-emulator) flag))
+
+(define (current-register-ref register)
+  (emulator-register-ref (current-emulator) register))
+
+(define (current-memory-ref address)
+  (emulator-memory-ref (current-emulator) address))
+
+(define (previous-emulator-state)
+  (emulator-state (current-emulator) -1))
+
+(define (previous-instruction-pointer)
+  (with-handlers ([exn:fail:a86? (λ (_) #f)])
+    (StepState-ip (previous-emulator-state))))
+
+(define (previous-flags)
+  (with-handlers ([exn:fail:a86? (λ (_) #f)])
+    (emulator->flags (current-emulator) -1)))
+
+(define (previous-registers)
+  (with-handlers ([exn:fail:a86? (λ (_) #f)])
+    (emulator->registers (current-emulator) -1)))
+
+(define (previous-flag-ref flag)
+  (with-handlers ([exn:fail:a86? (λ (_) 'no-result)])
+    (emulator-flag-ref (current-emulator) -1 flag)))
+
+(define (previous-register-ref register)
+  (with-handlers ([exn:fail:a86? (λ (_) #f)])
+    (emulator-register-ref (current-emulator) -1 register)))
+
+(define (previous-memory-ref address)
+  (emulator-memory-ref (current-emulator) -1 address))
+
 (define (step!)
   (emulator-step! (current-emulator)))
 
@@ -62,7 +108,45 @@
     [(_ body ...+)
      #'(parameterize ([current-runtime loot])
          (let ([emulator (initialize-emulator
+                          #;(list (Extern 'entry)
+                                (Label 'entry)
+                                (Mov 'rax #xffffffffffffffff)
+                                (Add 'rax 1)
+                                (Ret))
                           (list
+                           (Extern 'peek_byte)
+                           (Extern 'read_byte)
+                           (Extern 'write_byte)
+                           (Extern 'raise_error)
+                           (Global 'entry)
+                           (Label 'entry)
+                           (Push 'rbx)
+                           (Push 'r15)
+                           (Mov 'rbx 'rdi)
+                           (Mov 'rax 272)
+                           (Push 'rax)
+                           (Mov 'rax 672)
+                           (Push 'rax)
+                           (Mov 'rax 152)
+                           (Mov (Offset 'rbx 0) 'rax)
+                           (Pop 'rax)
+                           (Mov (Offset 'rbx 8) 'rax)
+                           (Mov 'rax 'rbx)
+                           (Or 'rax 2)
+                           (Add 'rbx 16)
+                           (Mov (Offset 'rbx 0) 'rax)
+                           (Pop 'rax)
+                           (Mov (Offset 'rbx 8) 'rax)
+                           (Mov 'rax 'rbx)
+                           (Or 'rax 2)
+                           (Add 'rbx 16)
+                           (Pop 'r15)
+                           (Pop 'rbx)
+                           (Ret)
+                           (Label 'raise_error_align)
+                           (Or 'rsp 8)
+                           (Jmp 'raise_error))
+                          #;(list
                            (Extern 'peek_byte)
                            (Extern 'read_byte)
                            (Extern 'write_byte)
