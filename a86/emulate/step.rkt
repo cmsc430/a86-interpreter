@@ -14,6 +14,8 @@
          "runtime.rkt"
          "state.rkt"
 
+         (rename-in "memory.rkt" [memory-ref original-memory-ref])
+
          (for-syntax syntax/parse
                      racket/syntax))
 
@@ -110,12 +112,29 @@
 ;; [StepState?].
 (define (step/manual step-state memory labels->addresses)
   (match step-state
-    [(StepState time-tick ip flags registers)
-     (let* ([current-instruction (memory-ref memory ip)]
+    [(StepState time-tick ip flags registers _)
+     (let* ([current-instruction (original-memory-ref memory ip)]
             [_ (debug "step ~a: ~v\t[~a]" time-tick current-instruction (format-word ip 'hex))]
-            ;; A convenience for calling [memory-set!].
+            ;; Memory transactions are tracked automatically by the [memory-ref]
+            ;; and [memory-set!] functions (defined below) and then inserted
+            ;; into the next [StepState].
+            [transactions (list)]
+            ;; A convenience for calling [memory-ref] that also tracks the read
+            ;; transaction.
+            [memory-ref (λ (address)
+                          (let ([value (memory-ref memory address)])
+                            (set! transactions
+                                  (cons (make-read-transaction address value word-size-bytes)
+                                        transactions))
+                            value))]
+            ;; A convenience for calling [memory-set!] that also tracks the write
+            ;; transaction.
             [memory-set! (λ (address value [byte-count word-size-bytes])
-                           (memory-set! memory address time-tick value byte-count))]
+                           (begin0
+                               (memory-set! memory address time-tick value byte-count)
+                             (set! transactions
+                                   (cons (make-write-transaction address value byte-count)
+                                         transactions))))]
             ;; A convenience for calling [address-from-offset].
             [address-from-offset (λ (offset) (address-from-offset registers offset))]
             ;; Checks if an instruction address is valid.
@@ -129,13 +148,14 @@
             ;; Called as the last step for every instruction's implementation.
             ;; The time tick is incremented, and other values are set as needed.
             [make-step-state
-             (λ (#:with-ip [new-ip #f]
-                 #:with-flags [new-flags #f]
+             (λ (#:with-ip        [new-ip        #f]
+                 #:with-flags     [new-flags     #f]
                  #:with-registers [new-registers #f])
                (StepState (add1 time-tick)
                           (or new-ip (lesser-word-aligned-address ip))
                           (or new-flags flags)
-                          (or new-registers registers)))]
+                          (or new-registers registers)
+                          transactions))]
             ;; For instructions that require processing arguments in specialized
             ;; ways. For example, a [Mov] instruction can process its second
             ;; argument (the "source") as a register, a memory offset, or an
@@ -164,7 +184,7 @@
                     (register-ref registers arg)]
                    [(and (interpretation-matches? 'offset)
                          (offset? arg))
-                    (address-from-offset arg)]
+                    (memory-ref (address-from-offset arg))]
                    [(and (interpretation-matches? 'address)
                          (a86-value? arg))
                     arg]
@@ -245,7 +265,7 @@
           ;; rsp += word-size-bytes
           ;; arg = stack.pop()
           (let* ([sp (register-ref registers 'rsp)]
-                 [value (memory-ref memory sp)]
+                 [value (memory-ref sp)]
                  [new-sp (greater-word-aligned-address sp)]
                  [new-registers (register-set*/truncate registers
                                                         'rsp new-sp
@@ -255,7 +275,7 @@
          [(Ret)
           ;; ip = stack.pop()
           (let* ([sp (register-ref registers 'rsp)]
-                 [new-ip (memory-ref memory sp)]
+                 [new-ip (memory-ref sp)]
                  [new-rsp (greater-word-aligned-address sp)]
                  [new-registers (register-set registers 'rsp new-rsp)])
             ;; TODO: Test this out.
@@ -299,7 +319,7 @@
                        (format-word return-address 'hex)
                        (format-word new-sp 'hex))
                 (debug "  retrieving address: ~a" (format-word
-                                                   (memory-ref memory new-sp)
+                                                   (original-memory-ref memory new-sp)
                                                    'hex))
                 (make-step-state #:with-ip new-ip
                                  #:with-registers new-registers)))]
@@ -403,7 +423,7 @@
           (move-with-condition dst src #t)]
          [(Cmove dst src)
           ;; dst = src  % when [Cmp a1 a2] indicates [a1 = a2].
-          (move-with-condition dst src flags-e?)]
+          ( move-with-condition dst src flags-e?)]
          [(Cmovne dst src)
           ;; dst = src  % when [Cmp a1 a2] indicates [a1 <> a2].
           (move-with-condition dst src flags-ne?)]
