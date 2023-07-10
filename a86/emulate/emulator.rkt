@@ -106,7 +106,8 @@
                             (register-set* fresh-registers
                                            'rsp (lesser-word-aligned-address
                                                  (address-range-hi mem stack))
-                                           'rdi (address-range-lo mem heap)))]
+                                           'rdi (address-range-lo mem heap))
+                            (list))]
          [_      (debug "first state initialized")]
          [states (make-vector states-size-increment #f)])
     (vector-set! states 0 state)

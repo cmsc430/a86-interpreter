@@ -87,8 +87,8 @@
                           [tick-width 0]
                           [expanded? #f])
   (match* (base-state succ-state)
-    [((StepState _         ip base-flags base-registers)
-      (StepState time-tick _  succ-flags succ-registers))
+    [((StepState _         ip base-flags base-registers _)
+      (StepState time-tick _  succ-flags succ-registers _))
      (let ([instruction (memory-ref memory ip)])
        (string-append
         ;; First line.
