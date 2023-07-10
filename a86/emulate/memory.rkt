@@ -18,6 +18,7 @@
          address-range-hi
          address-readable?
          address-writable?
+         (rename-out [Memory-address->name address-section-name])
          memory-ref
          memory-set!
          heap-allocate-space!
