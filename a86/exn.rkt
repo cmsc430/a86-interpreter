@@ -2,6 +2,7 @@
 
 (provide (struct-out exn:fail:a86)
          make-exn:fail:a86
+         raise-a86-error
          define-a86-exn/provide)
 
 (require (for-syntax racket/string
@@ -11,6 +12,14 @@
 (struct exn:fail:a86 exn:fail ()
   #:extra-constructor-name make-exn:fail:a86
   #:transparent)
+
+(define (raise-a86-error who format-str . args)
+  (raise (exn:fail:a86
+          (apply format
+                 (string-append "~s: " format-str)
+                 who
+                 args)
+          (current-continuation-marks))))
 
 (define-syntax (define-a86-exn/provide stx)
   (syntax-parse stx
@@ -31,7 +40,7 @@
      (if (attribute raise-error-name)
          #'raise-error-name
          (format-id #'name #:source #'name
-                    "raise-~a-error"
+                    "raise-a86-~a-error"
                     (string-replace (symbol->string (syntax-e #'name))
                                     ":"
                                     "-")))
