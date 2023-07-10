@@ -10,14 +10,15 @@
   (with-term
     (parameterize ([current-region-state (fresh-region-state)])
       ;; Manually initialize the regions one-by-one in the order we want them.
-      (header:initialize!)
+      #;(header:initialize!)
       (instructions:initialize!)
       (registers:initialize!)
+      (memory:initialize!)
       ;; Draw all the regions.
       (call-all 'redraw!)
       ;; Set up the initial info.
-      (header:write-info "Ready for execution...")
-      (header:write-state!)
+      #;(header:write-info "Ready for execution...")
+      #;(header:write-state!)
       ;; Set up an exit from the loop.
       (let/ec break
         ;; Begin the loop, but with the functionality set up.

@@ -20,12 +20,14 @@
   ((tui-loop-break)))
 
 (define (format-error msg)
-  (~a (string-replace msg "\n" " // ")
+  (void)
+  #;(~a (string-replace msg "\n" " // ")
       #:width (- header:width 2)
       #:limit-marker " [...]"))
 
 (define (handle-error err)
-  (match err
+  (void)
+  #;(match err
     [(exn msg _)
      (header:write-info (format-error msg))]))
 
@@ -45,7 +47,7 @@
   (hash-remove! keymap keydef))
 
 (define (refresh)
-  (header:write-state!)
+  #;(header:write-state!)
   (instructions:refresh-state!)
   (registers:write-flags!)
   (registers:write-registers!))
@@ -69,6 +71,6 @@
 (define (handle-key key)
   (match (hash-ref (current-keymap) key #f)
     [#f
-     (raise-tui-error 'handle-key "no keybinding for key: ~v" key)]
+     (raise-a86-tui-error 'handle-key "no keybinding for key: ~v" key)]
     [(? procedure? f)
      (f)]))

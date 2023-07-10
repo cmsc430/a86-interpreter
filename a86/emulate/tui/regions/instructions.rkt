@@ -5,9 +5,38 @@
          "../region.rkt"
          "../state.rkt")
 
+;; ┌────────────────────────────────────────────────┐
+;; │ Instructions (.text Section)                   │
+;; │                                                │
+;; │             [0x--------]  (Ret)                │
+;; │    label_1  [0x--------]  (Call 'label_2)      │
+;; │             [0x--------]  (Or 'rax 3)          │
+;; │             [0x--------]  (Or 'rax 2)          │
+;; │             [0x--------]  (Or 'rax 1)          │
+;; │             [0x--------]  (Mov 'rax 'rbx)      │
+;; │             [0x--------]  (Mov 'rbx 'rax)      │
+;; │             [0x--------]  (Ret)                │
+;; │             [0x--------]  (Mov 'rax 2)         │
+;; │    label_2  [0x--------]  (Push 'rax)          │
+;; │             [0x--------]  (Pop 'rax)           │
+;; │             [0x--------]  (And 'rax 34)        │
+;; │             [0x--------]  (Je 'label_1)        │
+;; │->           [0x--------]  (Sub 'rax 1)         │
+;; │             [0x--------]  (Add 'rax 1)         │
+;; │             [0x--------]  (Jmp 'label_1)       │
+;; └────────────────────────────────────────────────┘
+;;
+;; TODO: Should the window show + highlight the last instruction that ran? The
+;; current setup is visually confusing because the highlighted flags/registers/
+;; memory are relevant due to the previous instruction's execution, which may no
+;; longer even be visible. Highlighting the last instruction would instead show
+;; what caused the changes.
+;;
+;; If we had colors, the next instruction could be highlighted with a specific
+;; color (if visible), which could solve everything. Not right now, though.
 (define-region instructions
-  #:width-spec  80
-  #:height-spec available
+  #:width-spec  81
+  #:height-spec 34
 
   (define-field border-style                 'none)
   (define-field heading " Instructions (.text Section)")
