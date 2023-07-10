@@ -79,10 +79,6 @@
 ;; The Heap and Stack sections are initialized with zeroes. The Heap grows
 ;; upwards from the top of the last static section, and the Stack grows
 ;; downwards from the highest allowed address.
-;;
-;; Although x86 memory is byte-addressable, our simulation only handles words.
-;; It is recommended that clients of this API align addresses to words to ensure
-;; proper function.
 
 ;; The [Memory] struct abstracts over the names and addresses of sections. Its
 ;; purpose is to provide an opaque handle to the memory with which the user can
@@ -208,18 +204,17 @@
            [ranges->sections (cons (cons stack-range (cons stack stack-section))
                                    (cons (cons heap-range (cons heap heap-section))
                                          ranges->sections))])
-      (call-with-values
-       (thunk
-        (for/fold ([names (list)]
-                   [sections (list)]
-                   [ranges (list)])
-                  ([range-section-info ranges->sections])
-          (match range-section-info
-            [(cons section-range (cons section-name section))
-             (values (cons section-name names)
-                     (cons section sections)
-                     (cons section-range ranges))])))
-       Memory))))
+      (let-values ([(names sections ranges)
+                    (for/fold ([names    (list)]
+                               [sections (list)]
+                               [ranges   (list)])
+                              ([range-section-info ranges->sections])
+                      (match range-section-info
+                        [(cons section-range (cons section-name section))
+                         (values (cons section-name names)
+                                 (cons section sections)
+                                 (cons section-range ranges))]))])
+        (Memory names sections ranges)))))
 
 ;; Performs an address lookup, raising a ['segfault] error on failure. On
 ;; success, returns the internal index corresponding to the address.
@@ -270,12 +265,12 @@
 
 ;; Given a [Memory?] and address, looks up the current value stored at that
 ;; address in memory. Raises an error if the address cannot be accessed.
-(define/debug (memory-ref memory address)
+(define/debug (memory-ref memory address [tick #f])
   (let-values ([(_ section offset) (address->section+offset memory address)]
                [(byte-offset) (remainder address word-size-bytes)])
     (if (zero? byte-offset)
         ;; If word-aligned, just get the word.
-        (section-ref section offset)
+        (section-ref section offset tick)
         ;; Otherwise, get this word and the next one and combine the results
         ;; appropriately.
         ;;
@@ -305,8 +300,8 @@
         ;; +--------+
         ;; |$$$$$$$$| <-- End result.
         ;; +--------+
-        (let* ([word0 (section-ref section offset)]
-               [word1 (section-ref section (add1 offset))]
+        (let* ([word0 (section-ref section       offset  tick)]
+               [word1 (section-ref section (add1 offset) tick)]
                [mask0 (make-mask (* -8 (- word-size-bytes byte-offset)))]
                [mask1 (make-mask (* 8 byte-offset))]
                [value0 (arithmetic-shift (bitwise-and mask0 word0)
