@@ -56,6 +56,7 @@
          emulator-memory-ref)
 
 (require "../debug.rkt"
+         "../exn.rkt"
          "../registers.rkt"
          "../utility.rkt"
 
@@ -111,11 +112,27 @@
     (vector-set! states 0 state)
     (Emulator states 0 mem addrs)))
 
-(define (emulator-state [emulator #f] [step #f])
-  (match (or emulator (current-emulator))
+(define (normalize-step-to-state-index who emulator step)
+  (match emulator
     [(Emulator states index _ _)
-     (vector-ref states (or step
-                            index))]))
+     (match step
+       [(? exact-nonnegative-integer?) step]
+       [(? exact-integer?)
+        (let ([new-index (+ index step)])
+          (cond
+            [(negative? new-index)
+             (raise-a86-error who "negative state index: ~v" new-index)]
+            [(>= new-index (vector-length states))
+             (raise-a86-error who "too-great state index: ~v" new-index)]
+            [else
+             new-index]))]
+       [#f index]
+       [_ (raise-a86-error who "invalid step: ~v" step)])]))
+
+(define (emulator-state [emulator #f] [step #f])
+  (set! emulator (or emulator (current-emulator)))
+  (vector-ref (Emulator-states emulator)
+              (normalize-step-to-state-index 'emulator-state emulator step)))
 
 (define (emulator-step! [emulator #f])
   (set! emulator (or emulator (current-emulator)))
@@ -177,29 +194,36 @@
    (max (sub1 (Emulator-current-index emulator))
         0)))
 
-(define (emulator->flags [emulator #f])
-  (StepState-flags (emulator-state (or emulator (current-emulator)))))
+(define (emulator->flags [emulator #f] [step #f])
+  (StepState-flags (emulator-state (or emulator (current-emulator)) step)))
 
-(define (emulator->registers [emulator #f])
-  (StepState-registers (emulator-state (or emulator (current-emulator)))))
+(define (emulator->registers [emulator #f] [step #f])
+  (StepState-registers (emulator-state (or emulator (current-emulator)) step)))
 
 (define emulator-flag-ref
   (case-lambda
     [(flag)
      (emulator-flag-ref (current-emulator) flag)]
     [(emulator flag)
-     (hash-ref (emulator->flags emulator) flag)]))
+     (hash-ref (emulator->flags emulator) flag)]
+    [(emulator step flag)
+     (hash-ref (emulator->flags emulator step) flag)]))
 
 (define emulator-register-ref
   (case-lambda
     [(register)
      (emulator-register-ref (current-emulator) register)]
     [(emulator register)
-     (register-ref (emulator->registers emulator) register)]))
+     (register-ref (emulator->registers emulator) register)]
+    [(emulator step register)
+     (register-ref (emulator->registers emulator step) register)]))
 
 (define emulator-memory-ref
   (case-lambda
     [(address)
      (emulator-memory-ref (current-emulator) address)]
     [(emulator address)
-     (memory-ref (Emulator-memory emulator) address)]))
+     (memory-ref (Emulator-memory emulator) address)]
+    [(emulator step address)
+     (let ([tick (StepState-time-tick (emulator-state emulator step))])
+       (memory-ref (Emulator-memory emulator) address tick))]))
