@@ -44,11 +44,10 @@
 
 (require "debug.rkt"
          "utility.rkt"
+         racket/hash
 
          (only-in racket/private/hash
-                  paired-fold)
-
-         (for-syntax syntax/parse))
+                  paired-fold))
 
 ;; We define a set of accessible 64-bit and 32-bit registers for use in the
 ;; machine.
