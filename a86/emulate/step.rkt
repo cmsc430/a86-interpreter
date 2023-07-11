@@ -232,24 +232,27 @@
             [move-with-condition
              (λ (dst src condition)
                (let ([move? (or (eq? condition #t)
-                                (condition flags))])
+                                (condition flags))]
+                     ;; NOTE: Conditional move instructions read from the source
+                     ;; operand before evaluating the condition, so we must do
+                     ;; the same.
+                     [val (process-argument src #:as '(register offset integer))])
                  (debug "    moving ~v to ~v: ~v" src dst move?)
+                 (debug "      src val: ~v" val)
                  (if move?
-                     (let ([val (process-argument src #:as '(register offset integer))])
-                       (debug "      src val: ~v" val)
-                       (cond
-                         [(register? dst)
-                          (make-step-state #:with-registers (register-set/truncate registers dst val))]
-                         [(offset? dst)
-                          (let ([addr (address-from-offset dst)]
-                                ;; NOTE: If moving into something that doesn't
-                                ;; fit full words, it should be addressed here.
-                                [byte-count (cond
-                                              [(register/32-bit? src) 4]
-                                              [else 8])])
-                            (debug "      dst addr: ~v" addr)
-                            (memory-set! addr val byte-count)
-                            (make-step-state))]))
+                     (cond
+                       [(register? dst)
+                        (make-step-state #:with-registers (register-set/truncate registers dst val))]
+                       [(offset? dst)
+                        (let ([addr (address-from-offset dst)]
+                              ;; NOTE: If moving into something that doesn't
+                              ;; fit full words, it should be addressed here.
+                              [byte-count (cond
+                                            [(register/32-bit? src) 4]
+                                            [else 8])])
+                          (debug "      dst addr: ~v" addr)
+                          (memory-set! addr val byte-count)
+                          (make-step-state))])
                      (make-step-state))))])
        ;; TODO: Add more [debug] stuff throughout.
        (match current-instruction
@@ -439,7 +442,7 @@
          [(Cmovge dst src)
           ;; dst = src  % when [Cmp a1 a2] indicates [a1 >= a2].
           (move-with-condition dst src flags-ge?)]
-         [(Cmovo  dst src)
+         [(Cmovo dst src)
           ;; dst = src  % when [Cmp a1 a2] sets the overflow flag.
           (move-with-condition dst src flags-o?)]
          [(Cmovno dst src)
