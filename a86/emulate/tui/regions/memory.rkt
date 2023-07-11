@@ -128,22 +128,26 @@
 
   (define-method (write-region! left-addr-col left-val-col center-addr downwards? select?)
     (term:with-saved-pos
-     (for ([row-offset (in-range 5)]
-           [addr-idx (in-inclusive-range -2 2)])
-       (let* ([address (word-aligned-offset center-addr
-                                            (* (if downwards? -1 1) addr-idx))]
-              [row (+ first-main-row row-offset)])
-         (term:set-current-pos! left-addr-col row)
-         (term:with-mode
-          (if (and select? (eq? addr-idx 0)) 'inverse 'normal)
-          (term:display #:width subregion-width
-                        (string-append
-                         (format-address address)
-                         (make-string column-gap #\space)
-                         (format-value
-                          (if (address-readable? (current-memory) address)
-                              (current-memory-ref address)
-                              "!!!")))))))))
+     (let ([center-section (address-section-name (current-memory) center-addr)])
+       (for ([row-offset (in-range 5)]
+             [addr-idx (in-inclusive-range -2 2)])
+         (let* ([addr (word-aligned-offset center-addr
+                                           (* (if downwards? -1 1) addr-idx))]
+                [addr-section (address-section-name (current-memory) addr)]
+                [row (+ first-main-row row-offset)])
+           (term:set-current-pos! left-addr-col row)
+           (term:with-mode
+            (if (and select? (eq? addr-idx 0)) 'inverse 'normal)
+            (term:display #:width (- subregion-width 2)
+                          (string-append
+                           (format-address addr)
+                           (make-string column-gap #\space)
+                           (format-value
+                            (if (eq? addr-section center-section)
+                                (if (address-readable? (current-memory) addr)
+                                    (current-memory-ref addr)
+                                    "<unreadable>")
+                                (~a "<." addr-section ">")))))))))))
 
   (define-method (write-stack!)
     (match current-stack-focus
