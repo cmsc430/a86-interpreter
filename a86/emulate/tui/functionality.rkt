@@ -1,6 +1,7 @@
 #lang racket
 
-(provide tui-loop-break
+(provide use-debug?
+         tui-loop-break
          handle-error
          handle-key
          current-keymap
@@ -10,6 +11,8 @@
          "region-state.rkt"
          "state.rkt"
          "regions/main.rkt")
+
+(define use-debug? (make-parameter #f))
 
 (define tui-loop-break
   (make-parameter
@@ -21,13 +24,13 @@
 
 (define (format-error msg)
   (void)
-  #;(~a (string-replace msg "\n" " // ")
+  (~a (string-replace msg "\n" " // ")
       #:width (- header:width 2)
       #:limit-marker " [...]"))
 
 (define (handle-error err)
   (void)
-  #;(match err
+  (match err
     [(exn msg _)
      (header:write-info (format-error msg))]))
 
@@ -47,7 +50,8 @@
   (hash-remove! keymap keydef))
 
 (define (refresh)
-  #;(header:write-state!)
+  (when (use-debug?)
+    (header:write-state!))
   (instructions:refresh-state!)
   (registers:write-flags!)
   (registers:write-registers!)
