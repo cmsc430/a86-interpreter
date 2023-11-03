@@ -24,6 +24,8 @@
          ;; Defining runtimes.
          define/for-runtime
          undefine/for-runtime
+         runtime-name?
+         name->runtime
          define-runtime
          define-runtimes
          ;; Runtimes.
@@ -143,6 +145,11 @@
     [(_)
      #'(runtime-funcs (current-runtime))]))
 
+;; An association list mapping runtime names to the [runtime?]s.
+(define predefined-runtimes (make-hash))
+(define (runtime-name? name) (hash-has-key? predefined-runtimes name))
+(define (name->runtime name) (hash-ref predefined-runtimes name #f))
+
 ;; Defines a runtime.
 (define-syntax (define-runtime stx)
   (syntax-parse stx
@@ -169,8 +176,12 @@
                                             (list #'hash))
                                      #,@(flatten (map list names funcs))))]
             [runtimes (make-list (length (attribute runtime-name)) runtime-def)])
-       #`(define-values (runtime-name ...)
-           (values #,@runtimes)))]))
+       #`(begin (define-values (runtime-name ...)
+                  (values #,@runtimes))
+                (hash-set*! predefined-runtimes
+                            #,@(flatten (map list
+                                             (syntax->list #'('runtime-name ...))
+                                             (syntax->list #'(runtime-name ...)))))))]))
 
 
 ;; C standard library implementation.
