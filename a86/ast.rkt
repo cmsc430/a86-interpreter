@@ -7,6 +7,8 @@
 
 (provide seq
          prog
+         read-instructions
+         string->instructions
          64-bit-integer?
          32-bit-integer?)
 
@@ -126,7 +128,10 @@
 
 (define-syntax (define-instructions stx)
   (syntax-parse stx
-    [(_ (Name (arg ...) (~optional guard #:defaults ([guard #'#f]))) ...+)
+    [(_ all-instruction-names:id
+        get-instruction-name:id
+        (Name:id (arg:id ...)
+                 (~optional guard #:defaults ([guard #'#f]))) ...+)
      #'(begin (provide (struct-out Name) ...)
               (struct Name Instruction (arg ...) #:transparent #:guard guard) ...
               (provide all-instruction-names)
@@ -137,6 +142,7 @@
                   [(struct Name (arg ...)) 'Name] ...)))]))
 
 (define-instructions
+  all-instruction-names get-instruction-name
   ;; Separate the input by section.
   (Text   ())
   (Data   ())
@@ -323,3 +329,11 @@
 (define (check-has-initial-label asm)
   (unless (findf Label? asm)
     (error 'prog "no initial label found")))
+
+(define-namespace-anchor a)
+(define (read-instructions [in (current-input-port)])
+  (let ([ns (namespace-anchor->namespace a)])
+    (eval (read in) ns)))
+
+(define (string->instructions str)
+  (read-instructions (open-input-string str)))
