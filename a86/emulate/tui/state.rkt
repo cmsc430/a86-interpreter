@@ -24,6 +24,11 @@
          step!
          step-back!
 
+         with-state-from-instructions
+         with-state-from-input
+         with-state-from-string
+         with-state-from-file
+
          with-example-state)
 
 (require "../../ast.rkt"
@@ -111,6 +116,36 @@
 (define (step-back!)
   (emulator-step-back! (current-emulator)))
 
+(define-syntax (with-state-from-instructions stx)
+  (syntax-parse stx
+    [(_ instructions runtime body ...+)
+     #'(begin (displayln (format "using runtime: ~v" runtime))
+              (parameterize ([current-runtime runtime])
+                (let ([emulator (initialize-emulator instructions)])
+                  (parameterize ([current-tui-state (tui-state emulator)])
+                    body ...))))]))
+
+(define-syntax (with-state-from-input stx)
+  (syntax-parse stx
+    [(_ runtime body ...+)
+     #'(with-state-from-instructions (read-instructions) runtime body ...)]))
+
+(define-syntax (with-state-from-string stx)
+  (syntax-parse stx
+    [(_ str runtime body ...+)
+     #'(with-state-from-instructions
+         (string->instructions str)
+         runtime
+         body ...)]))
+
+(define-syntax (with-state-from-file stx)
+  (syntax-parse stx
+    [(_ path runtime body ...+)
+     #'(with-state-from-string
+         (file->string path)
+         runtime
+         body ...)]))
+
 (define-syntax (with-example-state stx)
   (syntax-parse stx
     [(_ body ...+)
@@ -121,7 +156,7 @@
                                 (Mov 'rax #xffffffffffffffff)
                                 (Add 'rax 1)
                                 (Ret))
-                          (list
+                          #;(list
                            (Extern 'peek_byte)
                            (Extern 'read_byte)
                            (Extern 'write_byte)
@@ -154,7 +189,7 @@
                            (Label 'raise_error_align)
                            (Or 'rsp 8)
                            (Jmp 'raise_error))
-                          #;(list
+                          (list
                            (Extern 'peek_byte)
                            (Extern 'read_byte)
                            (Extern 'write_byte)
