@@ -19,7 +19,7 @@
          (for-syntax syntax/parse
                      racket/syntax))
 
-;; Provides a form for defining new binary instructions, such as Add and Sub.
+;; Provides a form for defining new binary instructions, e.g., [Add] and [Sub].
 (define-syntax (define-binary-instruction stx)
   (syntax-parse stx
     [(_ (name arg1 arg2)
@@ -27,15 +27,15 @@
         (~optional (~seq #:result-name result-name)
                    #:defaults ([result-name #'value]))
         (~optional (~seq #:overflow-computation overflow-computation))
-        (~optional (~seq #:sign-computation sign-computation))
-        (~optional (~seq #:zero-computation zero-computation))
-        (~optional (~seq #:carry-computation carry-computation)))
-     (with-syntax ([func-name (format-id #'name #:source #'name "a86:~a" (syntax-e #'name))]
-                   [base-result (format-id #'result-name "base-~a" (syntax-e #'result-name))]
-                   [masked-result (format-id #'result-name "masked-~a" (syntax-e #'result-name))]
-                   [masked-result-sign (format-id #'result-name "masked-~a-sign" (syntax-e #'result-name))]
-                   [arg1-sign (format-id #'arg1 "~a-sign" (syntax-e #'arg1))]
-                   [arg2-sign (format-id #'arg1 "~a-sign" (syntax-e #'arg2))])
+        (~optional (~seq #:sign-computation     sign-computation))
+        (~optional (~seq #:zero-computation     zero-computation))
+        (~optional (~seq #:carry-computation    carry-computation)))
+     (with-syntax ([func-name          (format-id #'name #:source #'name "a86:~a"         (syntax-e #'name))]
+                   [base-result        (format-id #'result-name          "base-~a"        (syntax-e #'result-name))]
+                   [masked-result      (format-id #'result-name          "masked-~a"      (syntax-e #'result-name))]
+                   [masked-result-sign (format-id #'result-name          "masked-~a-sign" (syntax-e #'result-name))]
+                   [arg1-sign          (format-id #'arg1                 "~a-sign"        (syntax-e #'arg1))]
+                   [arg2-sign          (format-id #'arg1                 "~a-sign"        (syntax-e #'arg2))])
        #'(define (func-name arg1 arg2)
            (unless (unsigned-in-bounds? arg1)
              (raise-user-error 'func-name "first argument not within word size bounds: ~a" arg1))
@@ -127,16 +127,16 @@
                                   (cons (make-read-transaction address value word-size-bytes)
                                         transactions))
                             value))]
-            ;; A convenience for calling [memory-set!] that also tracks the write
-            ;; transaction.
+            ;; A convenience for calling [memory-set!] that also tracks the
+            ;; write transaction.
             [memory-set! (λ (address value [byte-count word-size-bytes])
                            (begin0
                                (memory-set! memory address time-tick value byte-count)
                              (set! transactions
                                    (cons (make-write-transaction address value byte-count)
                                          transactions))))]
-            ;; A convenience for calling [address-from-offset].
-            [address-from-offset (λ (offset) (address-from-offset registers offset))]
+            ;; Converts an [Offset] into an address.
+            [address-from-offset (match-lambda [(Offset reg off) (+ off (register-ref registers reg))])]
             ;; Checks if an instruction address is valid.
             [assert-ip-valid!
              (λ (new-ip)

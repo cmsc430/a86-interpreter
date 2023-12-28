@@ -71,5 +71,5 @@
               ['bss    (separate #:add-index #f #:bss    (cons x bss-contents))])]
            ;; TODO: Comments should probably be saved somewhere for
            ;; reconstruction during debugging.
-           [(? Comment?) (separate #:add-index #f)]
+           [(? comment?) (separate #:add-index #f)]
            [_ (separate #:text (cons instruction text-contents))]))])))

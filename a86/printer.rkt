@@ -50,6 +50,8 @@
       [(? reg?) (reg->string t)]
       [(Offset (? reg? r) i)
        (string-append "[" (reg->string r) " + " (number->string i) "]")]
+      [(Offset (? label? l) i)
+       (string-append "[" (label-symbol->string l) " + " (number->string i) "]")]
       [_ (label-symbol->string t)]))
 
   ;; Arg -> String
@@ -63,7 +65,7 @@
        (string-append "[" (label-symbol->string l) " + " (number->string i) "]")]
       [(Const l)
        (symbol->string l)]
-      [(? exp?) (exp->string a)]))
+      [(? lea-exp?) (exp->string a)]))
 
   ;; Exp -> String
   (define (exp->string e)
@@ -280,7 +282,7 @@
     [(Label g)
      (begin
        (write-string (string-append
-                      tab "global " (label-symbol->string g) "\n"
+                      ;tab "global " (label-symbol->string g) "\n"
                       tab "default rel\n"
                       tab "section .text\n"))
        (instrs-display a))]
