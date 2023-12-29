@@ -11,6 +11,8 @@
 (provide runtime
          runtime?
          current-runtime
+         current-runtime-input-port
+         current-runtime-output-port
          reset-runtime
          ;; Parameters for runtime functions.
          runtime/flags
@@ -50,11 +52,15 @@
 ;; [convert-runtime-function].
 (define current-runtime (make-parameter (runtime (hash))))
 
+;; I/O is handled through dedicated ports.
+(define current-runtime-input-port  (make-parameter #f))
+(define current-runtime-output-port (make-parameter #f))
+
 ;; These parameters will be set when the external function is called, giving the
 ;; foreign code access to everything.
-(define runtime/flags (make-parameter #f))
-(define runtime/registers (make-parameter #f))
-(define runtime/memory (make-parameter #f))
+(define runtime/flags         (make-parameter #f))
+(define runtime/registers     (make-parameter #f))
+(define runtime/memory        (make-parameter #f))
 (define runtime/stack-pointer (make-parameter #f))
 
 ;; Converts an external runtime function into a function that can be used with
@@ -69,6 +75,8 @@
 ;;
 ;; The called function must return a single integer result, which will be stored
 ;; in the 'rax register.
+;;
+;; TODO: Generalize this so the functionality can be customized more easily.
 (define (convert-runtime-function func)
   (let ([arity (procedure-arity func)])
     (unless (integer? arity)
@@ -183,6 +191,49 @@
                                              (syntax->list #'('runtime-name ...))
                                              (syntax->list #'(runtime-name ...)))))))]))
 
+(define-syntax (define/for-runtime/io stx)
+  (syntax-parse stx
+    [(_ (name:id arg:id ...)
+        (~seq #:mode (~or* (~and (~datum i)
+                                 (~bind [uses-input? #t] [uses-output? #f]))
+                           (~and (~datum o)
+                                 (~bind [uses-input? #f] [uses-output? #f]))
+                           (~and (~or* (~datum io) (~datum oi))
+                                 (~bind [uses-input? #t] [uses-output? #t]))) ...)
+        body:expr ...+)
+     #`(define (name arg ...)
+         #,@(if (attribute uses-input?)
+                (list #'(unless (current-runtime-input-port)
+                          (raise-user-error
+                           'name
+                           "current-runtime-input-port not parameterized; did you mean to run in I/O mode?")))
+                (list))
+         #,@(if (attribute uses-output?)
+                (list #'(unless (current-runtime-output-port)
+                          (raise-user-error
+                           'name
+                           "current-runtime-output-port not parameterized; did you mean to run in I/O mode?")))
+                (list))
+         (parameterize (#,@(if (attribute uses-input?)
+                               (list #'[current-input-port (current-runtime-input-port)])
+                               (list))
+                        #,@(if (attribute uses-output?)
+                               (list #'[current-output-port (current-runtime-output-port)])
+                               (list)))
+           body ...))]))
+
+(define-syntax (define/for-runtime/io/multiple stx)
+  (syntax-parse stx
+    [(_ [(name:id arg:id ...) mode [body:expr ...+]] ...)
+     #'(begin (define/for-runtime/io (name arg ...) #:mode mode body ...) ...)]))
+
+(define/for-runtime/io/multiple
+  [(guarded-read-byte)    i (read-byte)]
+  [(guarded-peek-byte)    i (peek-byte)]
+  [(guarded-write-byte b) o (write-byte b)]
+  [(raise-error)          o [(displayln "err")
+                             (raise-user-error 'runtime-error "something went wrong")]])
+
 
 ;; C standard library implementation.
 ;;
@@ -202,10 +253,14 @@
 
 
 ;; The various runtimes are defined below.
-(define-runtimes (evildoer extort fraud hoax hustle iniquity jig knock loot)
-  ([(read_byte)    (read-byte)]
-   [(peek_byte)    (peek-byte)]
-   [(write_byte b) (write-byte b)]))
+(define-runtime evildoer
+  ([(read_byte)    (guarded-read-byte)]
+   [(peek_byte)    (guarded-peek-byte)]
+   [(write_byte b) (guarded-write-byte b)]))
+
+(define-runtimes (extort fraud hoax hustle iniquity jig knock loot)
+  #:extending evildoer
+  ([(raise_error) (raise-error)]))
 
 (define-runtime hoodwink #:extending hoax
   ([(gensym) (gensym)]))

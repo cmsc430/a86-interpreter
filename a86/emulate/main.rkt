@@ -1,6 +1,6 @@
 #lang racket
 
-(provide (contract-out                  ;; TODO: Rearrange these.
+(provide (contract-out
           [int64            etype?]
           [int32            etype?]
           [uint64           etype?]
@@ -11,14 +11,19 @@
           [current-emulator (parameter/c emulator?)]
           [emulator-result  (parameter/c a86-value?)]
           [convert          (-> a86-value? etype? result/c)]
-          [ptr-ref          (->* (a86-value? etype?)
+          [ptr-ref          (->* [a86-value? etype?]
                                  (nonnegative-integer?)
                                  result/c)]
-          [asm-emulate      (->* ([listof instruction?])
-                                 (#:after (-> any/c)
-                                  #:on-exit (-> any/c))
+          [asm-emulate      (->* [(listof instruction?)]
+                                 [#:after   (-> any/c)
+                                  #:on-exit (-> any/c)]
                                  any/c)]
-          #;[asm-emulate/io  (-> (listof instruction?) string? any/c)]))
+          [asm-emulate/io   (->* [(listof instruction?)
+                                  string?]
+                                 [output-port?
+                                  #:after   (-> any/c)
+                                  #:on-exit (-> any/c)]
+                                 any/c)]))
 
 (require "../ast.rkt"
          "../utility.rkt"
