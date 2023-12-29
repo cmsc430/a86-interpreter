@@ -138,7 +138,7 @@
       (error n "literal must not exceed 64bits; given ~v (~v bits)" a2 (integer-length a2)))
     (when (and (offset? a1) (exact-integer? a2))
       (error n "cannot use a memory locations and literal; given ~v, ~v; go through a register instead" a1 a2))
-    (values a a1 a2)))
+    (values a1 a2)))
 
 (define check:cmov
   (λ (a1 a2 n)
@@ -166,7 +166,7 @@
 ;; Comments also count as instructions for this purpose.
 (define (instruction? x)
   (or (Instruction? x)
-      (Comment? x)))
+      (comment? x)))
 
 ;; Nothing special; just some struct.
 (struct Instruction () #:transparent)
