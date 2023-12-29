@@ -2,11 +2,8 @@
 
 (require "asm.rkt"
          "../a86/ast.rkt"
-         "../a86/emulator.rkt"
-         "../a86/memory.rkt"
-         "../a86/program.rkt"
-         "../a86/runtime.rkt"
-         "../a86/step.rkt"
+         "../a86/emulate/emulator.rkt"
+         "../a86/emulate/runtime.rkt"
          "../a86/utility.rkt"
          rackunit
 

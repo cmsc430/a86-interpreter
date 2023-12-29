@@ -2,9 +2,8 @@
 
 (require "utility.rkt"
          "../a86/ast.rkt"
-         "../a86/registers.rkt"
-         "../a86/runtime.rkt"
-         "../a86/utility.rkt"
+         "../a86/emulate/runtime.rkt"
+
          rackunit)
 
 (provide (all-defined-out))
@@ -23,20 +22,24 @@
                          (Mov 'rax 1)
                          (Ret))
   (test-instructions "program with only one Label"
+                     (Global 'entry)
                      (Label 'entry)
                      (Ret))
   (test-instructions "program with Extern and Label"
                      #:runtime (runtime (hash 'extern (λ () (error "don't run this"))))
                      (Extern 'extern)
+                     (Global 'entry)
                      (Label 'entry)
                      (Ret))
   (test-instructions "program with Mov"
                      #:with-registers (hash 'rax 1)
+                     (Global 'entry)
                      (Label 'entry)
                      (Mov 'rax 1)
                      (Ret))
   (test-instructions "program with Add"
                      #:with-registers (hash 'rax 2)
+                     (Global 'entry)
                      (Label 'entry)
                      (Mov 'rax 1)
                      (Add 'rax 'rax)
@@ -44,6 +47,7 @@
   (test-instructions "program with Add and ZF"
                      #:with-flags (hash 'ZF #t)
                      #:with-registers (hash 'rax 0)
+                     (Global 'entry)
                      (Label 'entry)
                      (Mov 'rax 1)
                      (Add 'rax -1)
@@ -53,7 +57,8 @@
   (run-tests program-creation-tests))
 
 (define (make-collatz-program n)
-  (prog (Label 'entry)
+  (prog (Global 'entry)
+        (Label 'entry)
         (Mov 'rax n)
         (Mov 'rbx 1)
         (Label 'compare)

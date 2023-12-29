@@ -8,7 +8,10 @@
          min-signed
          max-unsigned
          min-unsigned
+         max-signed/32-bit
+         min-signed/32-bit
          max-unsigned/32-bit
+         min-unsigned/32-bit
          a86-value?
          a86-value/32-bit?
          64-bit-integer?
@@ -67,7 +70,10 @@
 (define min-signed         (arithmetic-shift 1 (sub1 word-size-bits)))
 (define max-unsigned (sub1 (arithmetic-shift 1       word-size-bits)))
 (define min-unsigned 0)
+(define max-signed/32-bit   (sub1 (arithmetic-shift 1 31)))
+(define min-signed/32-bit         (arithmetic-shift 1 31))
 (define max-unsigned/32-bit (sub1 (arithmetic-shift 1 32)))
+(define min-unsigned/32-bit 0)
 
 ;; Values are integers in the 64-bit unsigned range
 (define (a86-value? x)

@@ -1,7 +1,6 @@
 #lang racket/base
 
-(require "utility.rkt"
-         "../a86/ast.rkt"
+(require "../a86/ast.rkt"
          "../a86/registers.rkt"
          "../a86/utility.rkt"
          rackunit
@@ -14,7 +13,8 @@
   (require rackunit/text-ui))
 
 (define offset-values (list 0 4 8))
-(define immediate-values (list 0 1 2 4 -1 max-signed max-unsigned))
+(define immediate-values/32 (list 0 1 2 4 -1 -17 -1829 max-signed/32-bit max-unsigned/32-bit min-signed/32-bit))
+(define immediate-values (append immediate-values/32 (list max-signed max-unsigned min-signed min-unsigned)))
 (define symbol-values (append all-instruction-names
                               (list 'foo 'entry (gensym 'entry))))
 (define valid-shift-values (range 0 word-size-bits))
@@ -318,7 +318,7 @@
                                                     op-name src-register dst-register i)
                                             exn:fail?
                                             (λ () (arith-op (Offset dst-register i) src-register))))))
-              (for/list ([v immediate-values])
+              (for/list ([v immediate-values/32])
                 (delay-test (test-not-exn (format "~a immediate ~a to register ~a"
                                                   op-name v dst-register)
                                           (λ () (arith-op dst-register v)))))))))))
