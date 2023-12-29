@@ -18,8 +18,9 @@
          fresh-registers
 
          make-flags
-         flag-names
          fresh-flags
+         flag-bits
+         flag-names
          flag?
 
          flags-o?
@@ -38,13 +39,15 @@
          flags-g?
          flags-ge?
 
+         flags->word
+         word->flags
+
          debug-flags
          trace-registers
          debug-registers)
 
 (require "debug.rkt"
          "utility.rkt"
-         racket/hash
 
          (only-in racket/private/hash
                   paired-fold))
@@ -154,9 +157,18 @@
         'SF sign
         'ZF zero
         'CF carry))
-(define flag-names
-  '(OF SF ZF CF))
 (define fresh-flags (make-flags))
+
+;; An association list mapping flags to their bit index in the FLAGS register.
+(define flag-bits
+  '((OF . 11)
+    (SF .  7)
+    (ZF .  6)
+    (CF .  0)))
+
+(define flag-names
+  (map car flag-bits))
+
 (define (flag? f)
   (member f flag-names))
 
@@ -181,6 +193,18 @@
                                    (hash-ref flags 'OF))))
 (define (flags-ge? flags) (eq? (hash-ref flags 'SF)
                                (hash-ref flags 'OF)))
+
+(define (flags->word flags)
+  (for/fold ([w 0])
+            ([flag+bit (in-list flag-bits)])
+    (if (hash-ref flags (car flag+bit))
+        (bitwise-ior w (arithmetic-shift 1 (cdr flag+bit)))
+        w)))
+
+(define (word->flags w)
+  (for/hasheq ([flag+bit (in-list flag-bits)])
+    (values (car flag+bit)
+            (bit-set? w (cdr flag+bit)))))
 
 (define (debug-flags flags)
   (when debug-on?

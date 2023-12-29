@@ -3,6 +3,7 @@
 (provide word-size-bytes
          word-size-bits
          format-word
+         bit-set?
          max-signed
          min-signed
          max-unsigned
@@ -49,6 +50,13 @@
         [(or 'hexadecimal 'hex 'h)
          (~r value #:base 16 #:min-width (* 2 word-size-bytes) #:pad-string "0")])
       (~a value)))
+
+;; Returns a Boolean indicating whether the specific bit is set in the given
+;; word.
+;;
+;; NOTE: This is a zero-based index, i.e., the least-significant bit is bit 0.
+(define (bit-set? word bit-index)
+  (not (zero? (bitwise-and word (arithmetic-shift 1 bit-index)))))
 
 ;; Maximum and minimum values for signed and unsigned representations.
 ;; max-signed:   011...
