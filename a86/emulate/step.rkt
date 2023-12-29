@@ -274,6 +274,24 @@
                                                         'rsp new-sp
                                                         arg value)])
             (make-step-state #:with-registers new-registers))]
+         [(Pushf)
+          ;; stack.push(FLAGS)
+          ;; rsp -= word-size-byte
+          (let* ([word (flags->word flags)]
+                 [new-sp (lesser-word-aligned-address (register-ref registers 'rsp))]
+                 [new-registers (register-set registers 'rsp new-sp)])
+            (memory-set! new-sp word)
+            (make-step-state #:with-registers new-registers))]
+         [(Popf)
+          ;; rsp += word-size-bytes
+          ;; FLAGS = stack.pop()
+          (let* ([sp (register-ref registers 'rsp)]
+                 [word (memory-ref sp)]
+                 [new-sp (greater-word-aligned-address sp)]
+                 [new-registers (register-set/truncate registers 'rsp new-sp)]
+                 [new-flags (word->flags word)])
+            (make-step-state #:with-registers new-registers
+                             #:with-flags new-flags))]
 
          [(Ret)
           ;; ip = stack.pop()

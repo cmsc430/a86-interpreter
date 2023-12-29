@@ -22,6 +22,7 @@
           Text Data Rodata Bss
           Label Global Extern
           Push Pop
+          Pushf Popf
           Ret Call
           Not Add Sub And Or Xor Cmp Sal Sar
           Jmp Je Jne Jl Jle Jg Jge Jo Jno Jc Jnc
@@ -185,7 +186,8 @@
               #,@(map (λ (name-stx args-stx guard-stx)
                         (quasisyntax/loc name-stx
                           (struct #,name-stx Instruction #,args-stx
-                            #:transparent #:guard #,guard-stx)))
+                            #:transparent
+                            #:guard #,guard-stx)))
                       (syntax->list #'(Name ...))
                       (syntax->list #'((arg ...) ...))
                       (syntax->list #'(guard ...)))))]))
@@ -204,6 +206,9 @@
   ;; Stack maintenance.
   (Push   (a1)      check:push)
   (Pop    (a1)      check:register)
+  ;; Flag maintenance.
+  (Pushf  ())
+  (Popf   ())
   ;; Function calls.
   (Ret    ())
   (Call   (x)       check:target)
