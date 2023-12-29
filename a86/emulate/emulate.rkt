@@ -7,14 +7,15 @@
 
 (require "emulator.rkt"
          "runtime.rkt"
-         "stacktrace.rkt")
+         "stacktrace.rkt"
+         "../utility.rkt")
 
 (define emulator-result (make-parameter #f))
 
 ;; Asm -> Value
 ;; Interpret (by using an emulator) x86-64 code
 (define (asm-emulate instructions
-                     #:after   [after-thunk (λ () (emulator-result))]
+                     #:after   [after-thunk (λ () (a86-value->signed-integer (emulator-result)))]
                      #:on-exit [error-thunk (λ () (void))])
   (asm-emulate/io instructions #f #f #:after after-thunk #:on-exit error-thunk))
 
