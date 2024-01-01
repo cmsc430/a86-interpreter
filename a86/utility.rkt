@@ -77,7 +77,8 @@
 
 ;; Values are integers in the 64-bit unsigned range
 (define (a86-value? x)
-  (<= min-unsigned x max-unsigned))
+  (and (real? x)
+       (<= min-unsigned x max-unsigned)))
 
 (define (a86-value/32-bit? x)
   (<= min-unsigned x max-unsigned/32-bit))

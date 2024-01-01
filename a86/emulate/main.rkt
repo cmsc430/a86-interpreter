@@ -15,14 +15,16 @@
                                  (nonnegative-integer?)
                                  result/c)]
           [asm-emulate      (->* [(listof instruction?)]
-                                 [#:after   (-> any/c)
-                                  #:on-exit (-> any/c)]
+                                 [#:after    (-> any/c)
+                                  #:on-exit  (-> any/c)
+                                  #:on-raise (-> any/c)]
                                  any/c)]
           [asm-emulate/io   (->* [(listof instruction?)
-                                  string?]
+                                  input-port?]
                                  [output-port?
-                                  #:after   (-> any/c)
-                                  #:on-exit (-> any/c)]
+                                  #:after    (-> any/c)
+                                  #:on-exit  (-> any/c)
+                                  #:on-raise (-> any/c)]
                                  any/c)]))
 
 (require "../ast.rkt"

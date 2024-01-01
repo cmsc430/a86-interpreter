@@ -4,11 +4,12 @@
 
 (require "../compile.rkt"
          "../parse.rkt"
+         "../types.rkt"
 
          "../../../../a86/emulate.rkt")
 
 (define (run e)
-  (asm-emulate (compile (parse e))))
+  (bits->value (asm-emulate (compile (parse e)))))
 
 (define test-specs
   '(["Abscond"   [ 7  7]
@@ -25,9 +26,20 @@
                         7)]
                  [7 (if (zero? (if (zero? 0) 1 0))
                         (if (zero? 1) 1 2)
-                        7)]]))
+                        7)]]
+
+    ["Dupe"      [#t #t]
+                 [#f #f]
+                 [1  (if #t 1 2)]
+                 [2  (if #f 1 2)]
+                 [1  (if  0 1 2)]
+                 [3  (if #t 3 4)]
+                 [4  (if #f 3 4)]
+                 [3  (if  0 3 4)]
+                 [#f (zero? 4)]
+                 [#t (zero? 0)]]))
 
 (module+ test
   (require "../../test-specs.rkt")
 
-  (run-test-specs "Con" test-specs run))
+  (run-test-specs "Dupe" test-specs run))

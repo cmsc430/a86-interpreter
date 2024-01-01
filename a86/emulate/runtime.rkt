@@ -222,17 +222,21 @@
                                (list)))
            body ...))]))
 
-(define-syntax (define/for-runtime/io/multiple stx)
+(define-syntax (define/for-runtime/io* stx)
   (syntax-parse stx
     [(_ [(name:id arg:id ...) mode [body:expr ...+]] ...)
      #'(begin (define/for-runtime/io (name arg ...) #:mode mode body ...) ...)]))
 
-(define/for-runtime/io/multiple
-  [(guarded-read-byte)    i (read-byte)]
-  [(guarded-peek-byte)    i (peek-byte)]
-  [(guarded-write-byte b) o (write-byte b)]
-  [(raise-error)          o [(displayln "err")
-                             (raise-user-error 'runtime-error "something went wrong")]])
+(define/for-runtime/io*
+  [(guarded-read-byte)    i [(let ([b (read-byte)])
+                               (if (eof-object? b)
+                                   (truncate-integer/signed -1)
+                                   b))]]
+  [(guarded-peek-byte)    i [(let ([b (peek-byte)])
+                               (if (eof-object? b)
+                                   (truncate-integer/signed -1)
+                                   b))]]
+  [(guarded-write-byte b) o [(write-byte b)]])
 
 
 ;; C standard library implementation.
@@ -260,7 +264,7 @@
 
 (define-runtimes (extort fraud hoax hustle iniquity jig knock loot)
   #:extending evildoer
-  ([(raise_error) (raise-error)]))
+  ([(raise_error) (raise 'err)]))
 
 (define-runtime hoodwink #:extending hoax
   ([(gensym) (gensym)]))
