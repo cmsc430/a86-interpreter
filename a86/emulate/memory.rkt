@@ -266,51 +266,79 @@
 
 ;; Given a [Memory?] and address, looks up the current value stored at that
 ;; address in memory. Raises an error if the address cannot be accessed.
-(define/debug (memory-ref memory address [tick #f])
-  (let-values ([(_ section offset) (address->section+offset memory address)]
-               [(byte-offset) (remainder address word-size-bytes)])
-    (if (zero? byte-offset)
-        ;; If word-aligned, just get the word.
-        (section-ref section offset tick)
-        ;; Otherwise, get this word and the next one and combine the results
-        ;; appropriately.
-        ;;
-        ;; +----------- 0x0010 : Base address of lesser word.
-        ;; |        +-- 0x0018 : Base address of greater word.
-        ;; |        |
-        ;; V        V
-        ;; +--------+--------+
-        ;; |#####$$$|$$$$$###| <-- Original bits with desired word split across
-        ;; +--------+--------+     the word boundary.
-        ;;       ^
-        ;;       |
-        ;;       +-- Byte offset at which desired word begins.
-        ;;
-        ;; +--------+ +--------+
-        ;; |00000111| |11111000| <-- Masks for desired values.
-        ;; +--------+ +--------+
-        ;;
-        ;; +--------+ +--------+
-        ;; |00000$$$| |$$$$$000| <-- Masked desired values.
-        ;; +--------+ +--------+
-        ;;
-        ;; +--------+ +--------+
-        ;; |$$$00000| |000$$$$$| <-- Shifted desired values.
-        ;; +--------+ +--------+
-        ;;
-        ;; +--------+
-        ;; |$$$$$$$$| <-- End result.
-        ;; +--------+
-        (let* ([word0 (section-ref section       offset  tick)]
-               [word1 (section-ref section (add1 offset) tick)]
-               [mask0 (make-mask (* -8 (- word-size-bytes byte-offset)))]
-               [mask1 (make-mask (* 8 byte-offset))]
-               [value0 (arithmetic-shift (bitwise-and mask0 word0)
-                                         (* -8 byte-offset))]
-               [value1 (arithmetic-shift (bitwise-and mask1 word1)
-                                         (* 8 (- word-size-bytes byte-offset)))]
-               [value (bitwise-ior value0 value1)])
-          value))))
+(define/debug (memory-ref memory address [tick #f] [byte-count word-size-bytes])
+  (unless (< 0 byte-count (add1 word-size-bytes))
+    (raise-user-error
+     'memory-ref
+     "byte-count must be greater than 0 and no more than the word size; got: ~v"
+     byte-count))
+  (let*-values ([(_ section offset) (address->section+offset memory address)]
+                [(byte-offset) (remainder address word-size-bytes)]
+                [(word0) (section-ref section offset tick)]
+                [(count0) (- word-size-bytes byte-offset)])
+    (if (and (zero? byte-offset)
+             (= count0 word-size-bytes))
+        ;; Retrieval of full word from word-aligned address.
+        word0
+        ;; Some other kind of retrieval.
+        (begin
+          ;; Any partial retrieval requires integer values.
+          (unless (integer? word0)
+            (raise-user-error
+             'memory-ref
+             "attempted partial-word retrieval of non-integer value at address ~a"
+             (~r #:base 16 address)))
+          (cond
+            ;; Retrieving part of a word from a word-aligned address.
+            ;;
+            ;;          +-- 0x10 : Address of desired bytes and word.
+            ;;          V
+            ;; +--------+
+            ;; |###$$$$$| <-- Desired bytes ($); unneeded bytes (#) after.
+            ;; +--------+
+            [(zero? byte-offset)
+             (bitwise-and word0 (make-mask (* 8 byte-count)))]
+            ;; Retrieving part of a word from an offset address, but all desired
+            ;; bytes lay within a single word.
+            ;;
+            ;;          +-- 0x10 : Base address of word.
+            ;;          V
+            ;; +--------+
+            ;; |#$$$####| <-- Desired bytes ($); unneeded bytes (#) surround.
+            ;; +--------+
+            ;;     ^
+            ;;     +------- 0x15 : Base address of desired bytes.
+            [(<= byte-count count0)
+             (let* ([mask (make-mask (* 8 count0) word-size-bits (* 8 byte-offset))]
+                    [masked (bitwise-and word0 mask)]
+                    [shifted (arithmetic-shift masked (* -8 byte-offset))])
+               shifted)]
+            ;; Retrieving bytes that span two words in memory.
+            ;;
+            ;;          +----------- 0x18 : Base address of greater word.
+            ;;          |        +-- 0x10 : Base address of lesser word.
+            ;;          V        V
+            ;; +--------+--------+
+            ;; |#####$$$|$$######| <-- Desired bytes ($) split across word
+            ;; +--------+--------+     boundary; unneeded bytes (#) surround.
+            ;;            ^
+            ;;            +--------- 0x16 : Base address of desired bytes.
+            ;;
+            ;;   1. Retrieve both the words.
+            ;;   2. Determine how many bytes in each word are needed.
+            ;;   3. Create masks for those bytes.
+            ;;   4. Mask and shift the words to get the bytes.
+            ;;   5. Merge the masked-and-shifted values.
+            [else
+             (let* ([word1 (section-ref section (add1 offset) tick)]
+                    [count1 (- byte-count count0)]
+                    [mask0 (make-mask (* 8 count0) word-size-bits (* 8 byte-offset))]
+                    [mask1 (make-mask (* 8 count1))]
+                    [masked0 (bitwise-and mask0 word0)]
+                    [masked1 (bitwise-and mask1 word1)]
+                    [value0 (arithmetic-shift masked0 (* -8 byte-offset))]
+                    [value1 (arithmetic-shift masked1 (*  8 count0))])
+               (bitwise-ior value0 value1))])))))
 
 ;; Given a [Memory?], address, time tick, and value, attempts to set the memory
 ;; accordingly. Raises an error if the address cannot be accessed, or if the
