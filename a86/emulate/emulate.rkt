@@ -38,14 +38,14 @@
                                                            p))))]
                         #:on-exit [exit-thunk (λ () (void))]
                         #:on-raise [raise-thunk after-thunk])
+  (current-emulator (initialize-emulator instructions))
   (parameterize ([current-runtime-input-port input-port]
                  [current-runtime-output-port output-port]
                  [exit-handler (λ (v)
                                  (exit-thunk)
                                  (raise-user-error 'asm-emulate/io
                                                    "program exited with status ~a"
-                                                   v))]
-                 [current-emulator (initialize-emulator instructions)])
+                                                   v))])
     (with-handlers ([exn?
                      (λ (e)
                        (raise-user-error
