@@ -1,6 +1,7 @@
 #lang racket
 
-(provide handling-strategy-limited
+(provide memory?
+         handling-strategy-limited
          handling-strategy-rotating
          handling-strategy-unlimited
          handling-strategy
@@ -95,6 +96,7 @@
 ;;                    sections defined in this memory. The list's order is
 ;;                    defined to be the same as [section-names].
 (struct Memory (section-names sections ranges) #:transparent)
+(define memory? Memory?)
 
 ;; Converts a section name to an index used internally in [Memory?] structs.
 (define/debug (Memory-name->section-index memory section-name)

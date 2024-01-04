@@ -6,7 +6,6 @@
           [uint64                 etype?]
           [uint32                 etype?]
           ;; TODO: Export more runtime functionality from here? Or elsewhere?
-          [current-runtime        (parameter/c runtime?)]
           [step-count             (parameter/c integer?)]
           [current-emulator       (parameter/c emulator?)]
           [emulator-result        (parameter/c a86-value?)]
@@ -46,7 +45,6 @@
          "emulate.rkt"
          "emulator.rkt"
          "etypes.rkt"
-         "runtime.rkt"
          "tools.rkt"
 
          (rename-in "emulator.rkt" [emulator-step-count step-count]))

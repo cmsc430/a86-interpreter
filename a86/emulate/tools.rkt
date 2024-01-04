@@ -3,8 +3,7 @@
 (provide convert
          ptr-ref)
 
-(require "emulate.rkt"
-         "emulator.rkt"
+(require "emulator.rkt"
          "etypes.rkt")
 
 (define (convert v t)

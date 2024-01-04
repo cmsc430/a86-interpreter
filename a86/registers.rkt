@@ -9,6 +9,7 @@
          register/64-bit?
          register/32-bit?
 
+         registers?
          register-ref
          register-set
          register-set*
@@ -19,6 +20,7 @@
 
          make-flags
          fresh-flags
+         flags?
          flag-bits
          flag-names
          flag?
@@ -88,6 +90,7 @@
 ;; It also allows us to define our own [register-ref] and [register-set]
 ;; functions that can handle lookup of low-bit registers.
 (struct register-hash (registers))
+(define registers? register-hash?)
 
 ;; Retrieves the value stored in the indicated register. If the indicated
 ;; register is width-restricted, a mask is applied to the resulting value.
@@ -158,6 +161,16 @@
         'ZF zero
         'CF carry))
 (define fresh-flags (make-flags))
+(define (flags? h)
+  (and (hash? h)
+       (let ([ks (hash-keys h)]
+             [vs (hash-values h)])
+         (and (= 4 (length ks))
+              (memq 'OF ks)
+              (memq 'SF ks)
+              (memq 'ZF ks)
+              (memq 'CF ks)
+              (andmap boolean? vs)))))
 
 ;; An association list mapping flags to their bit index in the FLAGS register.
 (define flag-bits

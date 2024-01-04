@@ -8,31 +8,46 @@
          (for-syntax syntax/parse
                      racket/list))
 
-(provide runtime
-         runtime?
-         current-runtime
-         current-runtime-input-port
-         current-runtime-output-port
-         reset-runtime
-         ;; Parameters for runtime functions.
-         runtime/flags
-         runtime/registers
-         runtime/memory
-         runtime/stack-pointer
-         ;; Using a runtime.
-         runtime-has-func?
-         runtime-ref
-         runtime-funcs
+(provide (contract-out
+          [runtime?                    (-> any/c boolean?)]
+          [current-runtime             (parameter/c runtime?)]
+          [current-runtime-input-port  (parameter/c (or/c #f input-port?))]
+          [current-runtime-output-port (parameter/c (or/c #f output-port?))]
+          [reset-runtime               (-> void?)]
+          ;; Parameters for runtime functions.
+          [runtime/flags               (parameter/c flags?)]
+          [runtime/registers           (parameter/c registers?)]
+          [runtime/memory              (parameter/c memory?)]
+          [runtime/stack-pointer       (parameter/c a86-value?)]
+          ;; Using a runtime.
+          [runtime-has-func?           (case-> (->          symbol? boolean?)
+                                               (-> runtime? symbol? boolean?))]
+          ;; TODO: The [procedure?] checks here could maybe be constrained to be
+          ;; some kind of [runtime-converted-procedure?] to verify they work as
+          ;; runtime functions.
+          [runtime-ref                 (case-> (->          symbol? procedure?)
+                                               (-> runtime? symbol? procedure?))]
+          [runtime-funcs               (case-> (->          (listof symbol?))
+                                               (-> runtime? (listof symbol?)))]
+          ;; Finding defined runtimes.
+          [runtime-name?               (-> symbol? boolean?)]
+          [name->runtime               (-> symbol? runtime?)]
+          ;; Predefined runtimes.
+          [evildoer                    runtime?]
+          [extort                      runtime?]
+          [fraud                       runtime?]
+          [hoax                        runtime?]
+          [hustle                      runtime?]
+          [iniquity                    runtime?]
+          [jig                         runtime?]
+          [knock                       runtime?]
+          [loot                        runtime?]
+          [hoodwink                    runtime?])
          ;; Defining runtimes.
-         define/for-runtime
-         undefine/for-runtime
-         runtime-name?
-         name->runtime
          define-runtime
          define-runtimes
-         ;; Runtimes.
-         evildoer extort fraud hoax hustle iniquity jig knock loot
-         hoodwink)
+         define/for-runtime
+         undefine/for-runtime)
 
 ;; Runtimes are implemented as a simple opaque struct. This prevents users from
 ;; defining bad runtime values, perhaps by not properly converting their desired
@@ -91,67 +106,38 @@
                            (begin0 (memory-ref memory stack-pointer)
                              (set! stack-pointer (lesser-word-aligned-address stack-pointer))))]
                [all-args (append reg-args mem-args)])
-          (parameterize ([runtime/flags flags]
-                         [runtime/registers registers]
-                         [runtime/memory memory]
+          (parameterize ([runtime/flags         flags]
+                         [runtime/registers     registers]
+                         [runtime/memory        memory]
                          [runtime/stack-pointer stack-pointer])
             (apply func all-args)))))))
 
 ;; Resets the [current-runtime] hash.
 (define (reset-runtime) (current-runtime (runtime (hash))))
 
-;; Defines a function for use in the runtime.
-;;
-;; The function should be defined as a normal Racket function, and the arguments
-;; will be filled in from the interpreter state when the function is called. The
-;; registers and memory can be accessed via the provided parameters
-;; [registers/runtime], [stack-memory/runtime], and [stack-pointer/runtime].
-(define-syntax (define/for-runtime stx)
-  (syntax-parse stx
-    [(_ (~seq #:runtime runtime) (func-name args ...) body ...+)
-     #'(set-runtime-names->functions!
-        runtime
-        (hash-set (runtime-names->functions runtime)
-                  'func-name
-                  (convert-runtime-function
-                   (λ (args ...)
-                     body ...))))]
-    [(_ (func-name args ...) body ...+) ;; TODO: Use [function-header] syntax class?
-     #'(define/for-runtime #:runtime (current-runtime)
-         (func-name args ...) body ...)]))
-
-;; Removes a function from use in the runtime, if it's defined. Does nothing
-;; otherwise.
-(define-syntax (undefine/for-runtime stx) ;; FIXME: Broken!
-  (syntax-parse stx
-    [(_ runtime func-name)
-     #'(hash-remove! (runtime-names->functions runtime) 'func-name)]
-    [(_ func-name)
-     #'(undefine/for-runtime (current-runtime) func-name)]))
-
 ;; Whether the current runtime defines a function with the indicated name.
-(define-syntax (runtime-has-func? stx)
-  (syntax-parse stx
-    [(_ runtime func-name)
-     #'(hash-has-key? (runtime-names->functions runtime) func-name)]
-    [(_ func-name)
-     #'(runtime-has-func? (current-runtime) func-name)]))
+(define runtime-has-func?
+  (case-lambda
+    [(func-name)
+     (runtime-has-func? (current-runtime) func-name)]
+    [(runtime func-name)
+     (hash-has-key? (runtime-names->functions runtime) func-name)]))
 
 ;; Retrieves the function with the indicated name from the runtime.
-(define-syntax (runtime-ref stx)
-  (syntax-parse stx
-    [(_ runtime func-name)
-     #'(hash-ref (runtime-names->functions runtime) func-name)]
-    [(_ func-name)
-     #'(runtime-ref (current-runtime) func-name)]))
+(define runtime-ref
+  (case-lambda
+    [(func-name)
+     (runtime-ref (current-runtime) func-name)]
+    [(runtime func-name)
+     (hash-ref (runtime-names->functions runtime) func-name)]))
 
 ;; Returns a list of the functions currently defined in the runtime.
-(define-syntax (runtime-funcs stx)
-  (syntax-parse stx
-    [(_ runtime)
-     #'(hash-keys (runtime-names->functions runtime))]
-    [(_)
-     #'(runtime-funcs (current-runtime))]))
+(define runtime-funcs
+  (case-lambda
+    [()
+     (runtime-funcs (current-runtime))]
+    [(runtime)
+     (hash-keys (runtime-names->functions runtime))]))
 
 ;; An association list mapping runtime names to the [runtime?]s.
 (define predefined-runtimes (make-hash))
@@ -190,6 +176,35 @@
                             #,@(flatten (map list
                                              (syntax->list #'('runtime-name ...))
                                              (syntax->list #'(runtime-name ...)))))))]))
+
+;; Defines a function for use in the runtime.
+;;
+;; The function should be defined as a normal Racket function, and the arguments
+;; will be filled in from the interpreter state when the function is called. The
+;; registers and memory can be accessed via the provided parameters
+;; [registers/runtime], [stack-memory/runtime], and [stack-pointer/runtime].
+(define-syntax (define/for-runtime stx)
+  (syntax-parse stx
+    [(_ (~seq #:runtime runtime) (func-name args ...) body ...+)
+     #'(set-runtime-names->functions!
+        runtime
+        (hash-set (runtime-names->functions runtime)
+                  'func-name
+                  (convert-runtime-function
+                   (λ (args ...)
+                     body ...))))]
+    [(_ (func-name args ...) body ...+) ;; TODO: Use [function-header] syntax class?
+     #'(define/for-runtime #:runtime (current-runtime)
+         (func-name args ...) body ...)]))
+
+;; Removes a function from use in the runtime, if it's defined. Does nothing
+;; otherwise.
+(define-syntax (undefine/for-runtime stx) ;; FIXME: Broken!
+  (syntax-parse stx
+    [(_ runtime func-name)
+     #'(hash-remove! (runtime-names->functions runtime) 'func-name)]
+    [(_ func-name)
+     #'(undefine/for-runtime (current-runtime) func-name)]))
 
 (define-syntax (define/for-runtime/io stx)
   (syntax-parse stx
