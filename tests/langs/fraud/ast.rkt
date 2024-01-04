@@ -4,14 +4,15 @@
          Prim0 Prim1 Prim2
          If Begin Let)
 
-;; type Expr = (Lit Datum)
-;;           | (Eof)
+;; type Expr = (Eof)
+;;           | (Lit Datum)
+;;           | (Var Id)
 ;;           | (Prim0 Op0)
 ;;           | (Prim1 Op1 Expr)
 ;;           | (Prim2 Op2 Expr Expr)
 ;;           | (If Expr Expr Expr)
+;;           | (Begin Expr Expr)
 ;;           | (Let Id Expr Expr)
-;;           | (Var Id)
 
 ;; type Id  = Symbol
 
