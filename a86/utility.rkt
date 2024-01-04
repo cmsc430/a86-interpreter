@@ -133,9 +133,9 @@
 (define (unsigned-in-bounds? n)
   (= n (truncate-integer/unsigned n)))
 
-;; Constructs a bit-mask. If [n] is non-negative, the mask is constructed
-;; starting from the least-significant bit. If [n] is negative, the mask is
-;; constructed starting from the most-significant bit.
+;; Constructs a bit-mask of [n] bits. If [n] is non-negative, the mask is
+;; constructed starting from the least-significant bit. If [n] is negative, the
+;; mask is constructed starting from the most-significant bit.
 ;;
 ;; The [width] determines the total bit-width of the mask. By default, masks are
 ;; made for words.
