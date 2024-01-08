@@ -1,6 +1,8 @@
 #lang racket
 
 (provide (contract-out
+          [char                   etype?]
+          [uchar                  etype?]
           [int64                  etype?]
           [int32                  etype?]
           [uint64                 etype?]
@@ -21,7 +23,7 @@
           [emulator-memory-ref/32 (case-> (-> address? a86-value/32-bit?)
                                           (-> emulator? address? a86-value/32-bit?)
                                           (-> emulator? nonnegative-integer? address? a86-value/32-bit?))]
-          [convert                (-> a86-value? etype? result/c)]
+          [convert                (-> integer? etype? result/c)]
           [ptr-ref                (->* [a86-value? etype?]
                                        (nonnegative-integer?)
                                        result/c)]
@@ -44,8 +46,7 @@
 
          "emulate.rkt"
          "emulator.rkt"
-         "etypes.rkt"
-         "tools.rkt"
+         "type-tools.rkt"
 
          (rename-in "emulator.rkt" [emulator-step-count step-count]))
 

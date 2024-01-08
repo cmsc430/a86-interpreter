@@ -3,6 +3,7 @@
 (require "../registers.rkt"
          "../utility.rkt"
 
+         "etypes.rkt"
          "memory.rkt"
 
          (for-syntax syntax/parse
@@ -246,12 +247,12 @@
   [(guarded-read-byte)    i [(let ([b (read-byte)])
                                (if (eof-object? b)
                                    (truncate-integer/signed -1)
-                                   b))]]
+                                   (convert b uchar)))]]
   [(guarded-peek-byte)    i [(let ([b (peek-byte)])
                                (if (eof-object? b)
                                    (truncate-integer/signed -1)
-                                   b))]]
-  [(guarded-write-byte b) o [(write-byte b)]])
+                                   (convert b uchar)))]]
+  [(guarded-write-byte b) o [(write-byte (convert b char))]])
 
 
 ;; C standard library implementation.
