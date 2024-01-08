@@ -29,6 +29,7 @@
                        (Cmp rax -1)
                        (Je end)
                        (Sal rax int-shift)
+                       (Or rax type-int)
                        (Jmp done)
                        (Label end)
                        (Mov rax (value->bits eof))
@@ -41,6 +42,7 @@
                        (Cmp rax -1)
                        (Je end)
                        (Sal rax int-shift)
+                       (Or rax type-int)
                        (Jmp done)
                        (Label end)
                        (Mov rax (value->bits eof))
@@ -69,8 +71,8 @@
     ['eof-object?   (seq (Cmp rax (value->bits eof))
                          if-equal)]
     ['write-byte    (seq assert-byte
-                         pad-stack
                          (Sar rax int-shift)
+                         pad-stack
                          (Mov rdi rax)
                          (Call 'write_byte)
                          unpad-stack

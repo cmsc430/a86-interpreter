@@ -7,7 +7,7 @@
          "../types.rkt"
 
          "../../../../a86/emulate.rkt"
-         (except-in "../../../../a86/emulate/runtime.rkt" current-runtime))
+         "../../../../a86/emulate/runtime.rkt")
 
 (current-runtime iniquity)
 
@@ -203,7 +203,7 @@
                              (void)
                              (begin (write-byte (- 123 i))
                                     (print-alphabet (sub1 i)))))
-                       (print-alphabet 26)])]
+                       (print-alphabet 26)])]  ;; TODO: write minimal C runtime and test code on processor
                  [("a" ,(void))  (""   [(define (f x)
                                           (write-byte x))
                                         (f 97)])]
