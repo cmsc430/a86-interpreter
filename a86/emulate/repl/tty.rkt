@@ -109,7 +109,8 @@
                                                  (list #'#:raw? (attribute raw?)))
                                             (list)))))
            (λ ()
-             (parameterize ([current-tty new-tty])
+             (parameterize ([current-tty new-tty]
+                            [current-input-mode 'original])
                body ...))
            (λ ()
              (close-tty new-tty)
@@ -193,30 +194,33 @@
   (syntax-parse stx
     [(_ body ...+)
      #'(let ([old-input-mode (current-input-mode)])
-         (parameterize ([current-input-mode 'raw])
-           (tty:set-input-mode! #:tty tty)
-           body ...)
-         (tty:set-input-mode! #:tty tty old-input-mode))]))
+         (begin0
+             (parameterize ([current-input-mode 'raw])
+               (tty:set-input-mode! #:tty (current-tty))
+               body ...)
+           (tty:set-input-mode! #:tty (current-tty) old-input-mode)))]))
 
 ;; Executes the [body]s in cooked input mode with echo enabled.
 (define-syntax (with-cooked-input stx)
   (syntax-parse stx
     [(_ body ...+)
      #'(let ([old-input-mode (current-input-mode)])
-         (parameterize ([current-input-mode 'cooked])
-           (tty:set-input-mode! #:tty tty)
-           body ...)
-         (tty:set-input-mode! #:tty tty old-input-mode))]))
+         (begin0
+             (parameterize ([current-input-mode 'cooked])
+               (tty:set-input-mode! #:tty tty)
+               body ...)
+           (tty:set-input-mode! #:tty tty old-input-mode)))]))
 
 ;; Executes the [body]s using the original settings, whatever they were.
 (define-syntax (with-original-settings stx)
   (syntax-parse stx
     [(_ body ...+)
      #'(let ([old-input-mode (current-input-mode)])
-         (parameterize ([current-input-mode 'original])
-           (tty:set-input-mode! #:tty tty)
-           body ...)
-         (tty:set-input-mode! #:tty tty old-input-mode))]))
+         (begin0
+             (parameterize ([current-input-mode 'original])
+               (tty:set-input-mode! #:tty tty)
+               body ...)
+           (tty:set-input-mode! #:tty tty old-input-mode)))]))
 
 ;; Uses [stty] to obtain the screen size. Returns two values: the number of rows
 ;; and the number of columns.
