@@ -9,6 +9,10 @@
          with-tty
          stty*
          stty*/capture
+         with-raw-input
+         with-cooked-input
+         with-original-settings
+         tty:size
          tty:read-byte
          tty:read-byte/timeout
          tty:read-bytes
@@ -32,8 +36,9 @@
 (define current-default-buffer-size     (make-parameter 8))
 (define current-default-timeout-seconds (make-parameter 10))
 
-;; The current TTY and its ports.
+;; The current TTY and its input mode.
 (define current-tty                     (make-parameter #f))
+(define current-input-mode              (make-parameter #f))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -50,24 +55,26 @@
 ;;   * The size of the buffer.
 ;;   * The start position in the buffer from which to begin new reads.
 ;;   * The end position in the buffer beyond which no bytes should be read.
-(struct tty (path                       ;; string
-             [ input-port #:mutable]    ;; input-port?
-             [output-port #:mutable]    ;; output-port?
-             buffer                     ;; bytes?
-             buffer-size                ;; positive-integer?
-             [buffer-p0   #:mutable]    ;; nonnegative-integer?
-             [buffer-pf   #:mutable]))  ;; nonnegative-integer?
+(struct tty (path                     ;; string
+             [ input-port #:mutable]  ;; input-port?
+             [output-port #:mutable]  ;; output-port?
+             buffer                   ;; bytes?
+             buffer-size              ;; positive-integer?
+             [buffer-p0   #:mutable]  ;; nonnegative-integer?
+             [buffer-pf   #:mutable]  ;; nonnegative-integer?
+             original-settings))      ;; bytes?
 
-;; Open a new TTY instance and set it to raw input mode with echo disabled.
+;; Open a new TTY instance. If [raw?] is not [#f], the TTY is set to raw mode.
 (define (open-tty #:path [path        (current-default-tty-path)]
-                  #:size [buffer-size (current-default-buffer-size)])
+                  #:size [buffer-size (current-default-buffer-size)]
+                  #:raw? [raw?        #f])
   (with-handlers ([(λ _ #t)
                    (λ (e)
                      (error 'open-tty "failed to open tty ~a\n exception: ~a" path e))])
-    (let*-values ([(in out) (open-input-output-file path #:exists 'update)]
-                  [(tty)    (tty path in out (make-bytes buffer-size) buffer-size 0 0)])
-      (unless (stty* #:tty tty "raw" "-echo")
-        (error 'open-tty "could not initialize raw input mode"))
+    (let*-values ([(in out)   (open-input-output-file path #:exists 'update)]
+                  [(settings) (tty:get-settings #:tty-path path)]
+                  [(tty)      (tty path in out (make-bytes buffer-size) buffer-size 0 0 settings)])
+      (when raw? (tty:raw-mode! #:tty tty))
       tty)))
 
 ;; Close a TTY, closing its ports and resetting it to cooked input mode.
@@ -75,7 +82,7 @@
   (with-handlers ([(λ _ #t) (void)]) (close-input-port  (tty-input-port  tty)))
   (with-handlers ([(λ _ #t) (void)]) (close-output-port (tty-output-port tty)))
   (if (with-handlers ([(λ _ #t) (λ _ #f)])
-        (stty* #:tty tty "cooked" "echo"))
+        (stty* #:tty tty (tty-original-settings tty)))
       (if (eq? tty (current-tty))
           (current-tty #f)
           (void))
@@ -86,7 +93,8 @@
 (define-syntax (with-tty stx)
   (syntax-parse stx
     [(_ (~alt (~optional (~seq #:path path))
-              (~optional (~seq #:size size))) ...
+              (~optional (~seq #:size size))
+              (~optional (~seq #:raw? raw?))) ...
         body ...+)
      #`(let ([new-tty #f])
          (dynamic-wind
@@ -96,6 +104,9 @@
                                             (list))
                                      #,@(or (and (attribute size)
                                                  (list #'#:size (attribute size)))
+                                            (list))
+                                     #,@(or (and (attribute raw?)
+                                                 (list #'#:raw? (attribute raw?)))
                                             (list)))))
            (λ ()
              (parameterize ([current-tty new-tty])
@@ -115,24 +126,108 @@
 
 ;; Call the [stty] command-line utility for the indicated TTY with the given
 ;; arguments. Uses default ports, e.g., [current-input-port] for input.
-(define (stty* #:tty [tty (current-tty)] . args)
+(define (stty* #:tty-path [path #f] #:tty [tty (current-tty)] . args)
   (apply system*
          stty-path
          stty-f-arg-string
-         (tty-path tty)
+         (or path (tty-path tty))
          args))
 
 ;; Like [stty*], but the output is captured into a byte string and returned.
-(define (stty*/capture #:tty [tty (current-tty)]. args)
+(define (stty*/capture #:tty-path [path #f] #:tty [tty (current-tty)] . args)
   (parameterize ([current-output-port (open-output-bytes)]
                  [current-input-port  (open-input-bytes #"")]
                  [current-error-port  (open-output-bytes)])
-    (unless (apply stty* #:tty tty args)
+    (unless (apply stty* #:tty-path path #:tty tty args)
       (error 'stty*/capture
              "stty process failed\n captured output:\n~a\ncaptured error output:\n~a"
              (get-output-bytes (current-output-port))
              (get-output-bytes (current-error-port))))
     (get-output-bytes (current-output-port))))
+
+;; Gets the settings o the [tty], typically so they can be restored later.
+(define (tty:get-settings #:tty-path [path #f] #:tty [tty (current-tty)] #:error? [error? #t])
+  (or (stty*/capture #:tty-path path #:tty tty "-g")
+      (and error?
+           (error 'tty:get-settings "could not retrieve settings from stty"))))
+
+;; Switch [tty] to raw input mode with echo disabled. This is useful for getting
+;; input without needing the user to press [enter].
+(define (tty:raw-mode! #:tty [tty (current-tty)] #:error? [error? #t])
+  (or (stty* #:tty tty "raw" "-echo")
+      (and error?
+           (error 'tty:raw-mode! "could not switch to raw input mode"))))
+
+;; Switch [tty] to cooked input mode with echo enabled. This is (typically) the
+;; default mode of operation.
+(define (tty:cooked-mode! #:tty [tty (current-tty)] #:error? [error? #t])
+  (or (stty* #:tty tty "cooked" "echo")
+      (and error?
+           (error 'tty:cooked-mode! "could not initialize cooked input mode"))))
+
+;; Restores [tty] to the settings that were recorded when it was opened.
+(define (tty:original-mode! #:tty [tty (current-tty)] #:error? [error? #t])
+  (or (stty* #:tty tty (tty-original-settings tty))
+      (and error?
+           (error 'tty:original-mode! "could not reset original settings"))))
+
+;; Sets [tty] to the given [mode] of operation:
+;;
+;;   * ['raw]      -> raw input mode, echo disabled
+;;   * ['cooked]   -> cooked input mode, echo enabled
+;;   * ['original] -> restore the original settings, whatever they were
+;;
+;; If [error?] is [#f], this returns [#f] on failure. Otherwise, an error is
+;; raised.
+(define (tty:set-input-mode! #:tty    [tty (current-tty)]
+                             #:error? [error? #t]
+                             [mode    (current-input-mode)])
+  (match mode
+    ['raw      (tty:raw-mode!      #:tty tty #:error? error?)]
+    ['cooked   (tty:cooked-mode!   #:tty tty #:error? error?)]
+    ['original (tty:original-mode! #:tty tty #:error? error?)]
+    [_ (error 'tty:set-input-mode! "unknown input mode: ~v" mode)]))
+
+;; Executes the [body]s in raw input mode with echo disabled.
+(define-syntax (with-raw-input stx)
+  (syntax-parse stx
+    [(_ body ...+)
+     #'(let ([old-input-mode (current-input-mode)])
+         (parameterize ([current-input-mode 'raw])
+           (tty:set-input-mode! #:tty tty)
+           body ...)
+         (tty:set-input-mode! #:tty tty old-input-mode))]))
+
+;; Executes the [body]s in cooked input mode with echo enabled.
+(define-syntax (with-cooked-input stx)
+  (syntax-parse stx
+    [(_ body ...+)
+     #'(let ([old-input-mode (current-input-mode)])
+         (parameterize ([current-input-mode 'cooked])
+           (tty:set-input-mode! #:tty tty)
+           body ...)
+         (tty:set-input-mode! #:tty tty old-input-mode))]))
+
+;; Executes the [body]s using the original settings, whatever they were.
+(define-syntax (with-original-settings stx)
+  (syntax-parse stx
+    [(_ body ...+)
+     #'(let ([old-input-mode (current-input-mode)])
+         (parameterize ([current-input-mode 'original])
+           (tty:set-input-mode! #:tty tty)
+           body ...)
+         (tty:set-input-mode! #:tty tty old-input-mode))]))
+
+;; Uses [stty] to obtain the screen size. Returns two values: the number of rows
+;; and the number of columns.
+(define (tty:size #:tty [tty (current-tty)])
+  (let ([text (stty*/capture #:tty tty "-a")])
+    (match* {(regexp-match #px#"rows\\s+(\\d+)|\\s+(\\d+)\\s+rows" text)
+             (regexp-match #px#"columns\\s+(\\d+)|\\s+(\\d+)\\s+columns" text)}
+      [{(or (list _ #f rows-bs) (list _ rows-bs #f))
+        (or (list _ #f cols-bs) (list _ cols-bs #f))}
+       (values (string->number (bytes->string/utf-8 rows-bs))
+               (string->number (bytes->string/utf-8 cols-bs)))])))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
