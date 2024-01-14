@@ -187,7 +187,7 @@
 
     (define (emulator-proc instructions input-port output-port)
       (let ([emulator (initialize-emulator instructions)])
-        (when ((persist-current-emulator?))
+        (when (persist-current-emulator?)
           (current-emulator emulator))
         (parameterize ([current-emulator emulator]
                        [current-runtime-input-port   input-port]
@@ -207,7 +207,7 @@
                                      input-port
                                      output-port))
 
-    (emulator-prompt-handler instructions input-port output-port)))f
+    (emulator-prompt-handler instructions input-port output-port)))
 
 ;; Like [run-emulator], but only works when an emulator is already running. This
 ;; is useful when you want to emulate multiple programs within the same
