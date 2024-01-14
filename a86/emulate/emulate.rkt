@@ -126,26 +126,40 @@
 ;; The I/O version also shows what input was not consumed yet, and what output
 ;; was captured prior the exception being raised.
 (define default-emulator-exn?-handler
-  (λ (e) (raise-user-error "error encountered during evaluation:\n\n~a\nmachine stack trace:\n~a"
-                           (exn-message e)
-                           (format-stacktrace (current-emulator)))))
+  (λ (e) (raise-user-error
+          (format "error encountered during evaluation:\n\n~a\nmachine stack trace:\n~a"
+                  (string-join (for/list ([str (in-list (string-split
+                                                         (exn-message e)
+                                                         "\n"))])
+                                 (if (non-empty-string? str)
+                                     (string-append "  " str)
+                                     str))
+                               "\n")
+                  (format-stacktrace (current-emulator))))))
 (define default-emulator-exn?-handler/io
-  (λ (e) (raise-user-error "error encountered during I/O evaluation:\n\n~a\n  machine stack trace:\n~a\n  input unused: ~v\n  output captured: ~v"
-                           (exn-message e)
-                           (string-join (for/list ([str (in-list (string-split
-                                                                  (format-stacktrace (current-emulator))
-                                                                  "\n"))])
-                                          (if (non-empty-string? str)
-                                              (string-append "  " str)
-                                              str))
-                                        "\n")
-                           (string-append*
-                            (let read-loop ([strs '()])
-                              (match (read-string 8 (current-runtime-input-port))
-                                [(? eof-object?) (reverse strs)]
-                                [str (read-loop (cons str strs))])))
-                           (and (string-port? (current-runtime-output-port))
-                                (get-output-string (current-runtime-output-port))))))
+  (λ (e) (raise-user-error
+          (format "error encountered during I/O evaluation:\n\n  ~a\n  machine stack trace:\n~a\n  input unused: ~v\n  output captured: ~v"
+                  (string-join (for/list ([str (in-list (string-split
+                                                         (exn-message e)
+                                                         "\n"))])
+                                 (if (non-empty-string? str)
+                                     (string-append "  " str)
+                                     str))
+                               "\n")
+                  (string-join (for/list ([str (in-list (string-split
+                                                         (format-stacktrace (current-emulator))
+                                                         "\n"))])
+                                 (if (non-empty-string? str)
+                                     (string-append "  " str)
+                                     str))
+                               "\n")
+                  (string-append*
+                   (let read-loop ([strs '()])
+                     (match (read-string 8 (current-runtime-input-port))
+                       [(? eof-object?) (reverse strs)]
+                       [str (read-loop (cons str strs))])))
+                  (and (string-port? (current-runtime-output-port))
+                       (get-output-string (current-runtime-output-port)))))))
 
 ;; Non-exceptions that are raised are returned as the result of the emulation.
 (define default-emulator-raise-handler    (λ (e) e))
