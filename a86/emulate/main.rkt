@@ -26,7 +26,7 @@
           [step-count                (parameter/c integer?)]
           [current-emulator          (parameter/c emulator?)]
           [persist-current-emulator? (parameter/c boolean?)]
-          [run-emulator              (-> (listof instruction?) input-port? output-port?)]
+          [run-emulator              (-> (listof instruction?) input-port? output-port? any/c)]
           [asm-emulate               (->* [(listof instruction?)]
                                           [#:before   (-> any/c)
                                            #:during   (-> any/c)
