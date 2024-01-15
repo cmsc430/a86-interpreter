@@ -26,6 +26,7 @@
 
          run-emulator
          reload-emulator
+         exit-emulator
 
          asm-emulate
          asm-emulate/io)
@@ -162,8 +163,16 @@
                        (get-output-string (current-runtime-output-port)))))))
 
 ;; Non-exceptions that are raised are returned as the result of the emulation.
-(define default-emulator-raise-handler    (λ (e) e))
-(define default-emulator-raise-handler/io (λ (e) e))
+(define default-emulator-raise-handler
+  (λ (v)
+    ((exit-emulator) v)))
+(define default-emulator-raise-handler/io
+  (λ (v)
+    (let ([p (current-runtime-output-port)])
+      ((exit-emulator) (cons v
+                             (if (string-port? p)
+                                 (get-output-string p)
+                                 p))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -203,15 +212,25 @@
       (let ([emulator (initialize-emulator instructions)])
         (when (persist-current-emulator?)
           (current-emulator emulator))
-        (parameterize ([current-emulator emulator]
-                       [current-runtime-input-port   input-port]
-                       [current-runtime-output-port output-port])
-          ((current-emulator-before-thunk))
-          (parameterize ([exit-handler (current-emulator-exit-handler)])
-            (with-handlers ([exn?     (current-emulator-exn?-handler)]
-                            [(λ _ #t) (current-emulator-raise-handler)])
-              ((current-emulator-body-thunk))))
-          ((current-emulator-after-thunk)))))
+        (let/cc exit-proc
+          (parameterize ([current-emulator               emulator]
+                         [current-runtime-input-port   input-port]
+                         [current-runtime-output-port output-port])
+            ((current-emulator-before-thunk))
+            (parameterize ([exit-handler
+                            (λ args
+                              (parameterize ([exit-emulator exit-proc])
+                                (apply (current-emulator-exit-handler) args)))])
+              (with-handlers ([exn?
+                               (λ args
+                                 (parameterize ([exit-emulator exit-proc])
+                                   (apply (current-emulator-exn?-handler) args)))]
+                              [(λ _ #t)
+                               (λ args
+                                 (parameterize ([exit-emulator exit-proc])
+                                   (apply (current-emulator-raise-handler) args)))])
+                ((current-emulator-body-thunk))))
+            ((current-emulator-after-thunk))))))
 
     (define (emulator-prompt-handler instructions input-port output-port)
       (call-with-continuation-prompt emulator-proc
@@ -231,8 +250,27 @@
            (default-continuation-prompt-tag))
       (raise-user-error 'reload-emulator "emulator not active; cannot reload")
       (abort-current-continuation (current-emulator-continuation-prompt-tag)
-                                  instructions input-port
-                                  output-port)))
+                                  instructions input-port output-port)))
+
+;; Forces [run-emulator] to replace the current continuation (starting after the
+;; beginning of the emulator evaluation). This is useful for preventing
+;; [run-emulator] from calling the [current-emulator-after-thunk].
+;;
+;; NOTE: This parameter is only parameterized within the bodies of
+;; [current-emulator-exit-handler], [current-emulator-exn?-handler], and
+;; [current-emulator-raise-handler].
+;;
+;; TODO: Should this also be parameterized within the
+;; [current-emulator-body-thunk]? And possibly the other two as well? For the
+;; moment I think not, but I'm not sure it's the right call.
+(define exit-emulator
+  (make-parameter
+   (λ _
+     (raise-user-error 'exit-emulator
+                       "only available within the body of ~a, ~a, and ~a"
+                       "current-emulator-exit-handler"
+                       "current-emulator-exn?-handler"
+                       "current-emulator-raise-handler"))))
 
 ;; Calls [run-emulator] with the default parameters for non-I/O interpretation.
 ;; However, parameters can either be overridden by using a keyword argument or
