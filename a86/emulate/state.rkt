@@ -29,9 +29,9 @@
 (define transaction-value      Transaction-value)
 (define transaction-byte-count Transaction-byte-count)
 
-(define (read-address       t) (and (read-transaction?  t) (Transaction-address t)))
-(define (read-value         t) (and (read-transaction?  t) (Transaction-value t)))
-(define (read-byte-count    t) (and (read-transaction?  t) (Transaction-byte-count t)))
+(define (read-address       t) (and ( read-transaction? t) (Transaction-address t)))
+(define (read-value         t) (and ( read-transaction? t) (Transaction-value t)))
+(define (read-byte-count    t) (and ( read-transaction? t) (Transaction-byte-count t)))
 (define (written-address    t) (and (write-transaction? t) (Transaction-address t)))
 (define (written-value      t) (and (write-transaction? t) (Transaction-value t)))
 (define (written-byte-count t) (and (write-transaction? t) (Transaction-byte-count t)))

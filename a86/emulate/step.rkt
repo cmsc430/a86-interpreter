@@ -122,7 +122,7 @@
             ;; A convenience for calling [memory-ref] that also tracks the read
             ;; transaction.
             [memory-ref (λ (address)
-                          (let ([value (memory-ref memory address)])
+                          (let ([value (original-memory-ref memory address)])
                             (set! transactions
                                   (cons (make-read-transaction address value word-size-bytes)
                                         transactions))

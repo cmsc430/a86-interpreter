@@ -137,6 +137,8 @@
 
 (define (emulator-state [emulator #f] [step #f])
   (set! emulator (or emulator (current-emulator)))
+  (unless emulator
+    (error 'emulator-state "no emulator set!"))
   (vector-ref (Emulator-states emulator)
               (normalize-step-to-state-index 'emulator-state emulator step)))
 
