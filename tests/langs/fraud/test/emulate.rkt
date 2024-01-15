@@ -7,7 +7,7 @@
          "../types.rkt"
 
          "../../../../a86/emulate.rkt"
-         (except-in "../../../../a86/emulate/runtime.rkt" current-runtime))
+         "../../../../a86/emulate/runtime.rkt")
 
 (current-runtime fraud)
 

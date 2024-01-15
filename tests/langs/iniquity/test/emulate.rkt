@@ -228,14 +228,16 @@
                                           (f z 98))])]]))
 
 (define (run e)
-  (match (asm-emulate (compile (apply parse e)))
-    ['err 'err]
-    [bs (bits->value bs)]))
+  (parameterize ([persist-current-emulator? #t])
+    (match (asm-emulate (compile (apply parse e)))
+      ['err 'err]
+      [bs (bits->value bs)])))
 
 (define (run/io in e)
-  (match (asm-emulate/io (compile (apply parse e)) in)
-    [(cons 'err out) (cons 'err             out)]
-    [(cons bs   out) (cons (bits->value bs) out)]))
+  (parameterize ([persist-current-emulator? #t])
+    (match (asm-emulate/io (compile (apply parse e)) in)
+      [(cons 'err out) (cons 'err             out)]
+      [(cons bs   out) (cons (bits->value bs) out)])))
 
 (module+ test
   (require "../../test-specs.rkt")
