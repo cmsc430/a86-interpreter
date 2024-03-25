@@ -188,3 +188,24 @@
                (cons x xs)))
          '()
          xs))
+
+;; An extended version of [racket/syntax].
+(module racket/syntax racket
+  (provide format-ids
+           (all-from-out racket/syntax))
+
+  (require racket/syntax
+           (for-syntax racket/syntax
+                       syntax/parse))
+
+  ;; Like [format-id], but operates on a list of syntax objects to apply each of
+  ;; them to the format string.
+  (define-syntax (format-ids stx)
+    (syntax-parse stx
+      [(_ lctxs fmt-str)
+       #'(format-ids this-stx lctxs fmt-str this-stx)]
+      [(_ this-lctx:id lctxs fmt-str arg ...)
+       #'(map (λ (lctx)
+                (let ([this-lctx lctx])
+                  (format-id lctx fmt-str arg ...)))
+              lctxs)])))

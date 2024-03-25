@@ -2,7 +2,7 @@
 
 (provide (all-defined-out))
 
-(require "../../../a86/emulate/main.rkt")
+(require "../../../a86/emulate.rkt")
 
 (define imm-shift                3)
 (define imm-mask             #b111)

@@ -332,7 +332,7 @@
                    [(and (interpretation-matches? 'label)
                          (symbol? arg))
                     (cond
-                      [(hash-ref labels->addresses arg)
+                      [(hash-ref labels->addresses arg #f)
                        => (λ (p) p)]
                       [else
                        (raise-user-error 'step "not a valid label: ~a" arg)])]
@@ -451,42 +451,52 @@
                                         #:with-registers new-registers))))]
          [(Call dst)
           ;; % The handling of a Call depends upon the argument.
-          (if (runtime-has-func? dst)
-              ;; If the target of the Call is a label corresponding to an
-              ;; external function in the runtime, we call that function.
-              (let* ([func (process-argument dst #:as 'external-function)]
-                     [sp (register-ref 'rsp)]
-                     [result (func flags registers memory sp)])
-                (cond
-                  [(void? result)
-                   (make-step-state)]
-                  [(not (integer? result))
-                   (raise-user-error 'step-Call
-                                     "result of call to external function '~a' not void? or integer?: ~v"
-                                     dst
-                                     result)]
-                  [(not (<= (integer-length result) word-size-bits))
-                   (raise-user-error 'step-Call
-                                     "integer result of call to external function '~a' too wide: ~v"
-                                     dst
-                                     result)]
-                  [else
-                   (make-step-state #:with-registers (register-set 'rax result))]))
-              ;; stack.push(ip + wordsize)
-              ;; ip = dst
-              (let* ([return-address (lesser-word-aligned-address ip)]
-                     [new-ip (process-argument dst #:as '(register label))]
-                     [new-sp (lesser-word-aligned-address (register-ref 'rsp))]
-                     [new-registers (register-set 'rsp new-sp)])
-                (memory-set! new-sp return-address)
-                (debug "  wrote return address ~a to stack address ~a"
-                       (format-word return-address 'hex)
-                       (format-word new-sp 'hex))
-                (debug "  retrieving address: ~a" (format-word
-                                                   (original-memory-ref memory new-sp)
-                                                   'hex))
-                (make-step-state #:with-ip new-ip
-                                 #:with-registers new-registers)))]
+          (cond
+            [(runtime-has-func? dst)
+             ;; If the target of the Call is a label corresponding to an
+             ;; external function in the runtime, we call that function.
+             (let* ([func (process-argument dst #:as 'external-function)]
+                    [sp (register-ref 'rsp)]
+                    [result (func flags registers memory sp)])
+               (cond
+                 [(void? result)
+                  (make-step-state)]
+                 [(not (integer? result))
+                  (raise-user-error 'step-Call
+                                    "result of call to external function '~a' not void? or integer?: ~v"
+                                    dst
+                                    result)]
+                 [(not (<= (integer-length result) word-size-bits))
+                  (raise-user-error 'step-Call
+                                    "integer result of call to external function '~a' too wide: ~v"
+                                    dst
+                                    result)]
+                 [else
+                  (make-step-state #:with-registers (register-set 'rax result))]))]
+            [(or (register? dst)
+                 (hash-has-key? labels->addresses dst))
+             ;; If the target of the Call is a register or internal label, we
+             ;; get the value stored in that location and use it as the new
+             ;; instruction pointer.
+             ;;
+             ;; stack.push(ip + wordsize)
+             ;; ip = dst
+             (let* ([return-address (lesser-word-aligned-address ip)]
+                    [new-ip (process-argument dst #:as '(register label))]
+                    [new-sp (lesser-word-aligned-address (register-ref 'rsp))]
+                    [new-registers (register-set 'rsp new-sp)])
+               (memory-set! new-sp return-address)
+               (debug "  wrote return address ~a to stack address ~a"
+                      (format-word return-address 'hex)
+                      (format-word new-sp 'hex))
+               (debug "  retrieving address: ~a" (format-word
+                                                  (original-memory-ref memory new-sp)
+                                                  'hex))
+               (make-step-state #:with-ip new-ip
+                                #:with-registers new-registers))]
+            [else
+             ;; Otherwise, the Call is invalid.
+             (raise-user-error 'step "invalid target of Call: ~v" dst)])]
 
          [(Not x)
           ;; x = !x
@@ -588,7 +598,7 @@
           (move-with-condition dst src #t)]
          [(Cmove dst src)
           ;; dst = src  % when [Cmp a1 a2] indicates [a1 = a2].
-          ( move-with-condition dst src flags-e?)]
+          (move-with-condition dst src flags-e?)]
          [(Cmovne dst src)
           ;; dst = src  % when [Cmp a1 a2] indicates [a1 <> a2].
           (move-with-condition dst src flags-ne?)]

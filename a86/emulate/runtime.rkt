@@ -130,7 +130,7 @@
     [(func-name)
      (runtime-ref (current-runtime) func-name)]
     [(runtime func-name)
-     (hash-ref (runtime-names->functions runtime) func-name)]))
+     (hash-ref (runtime-names->functions runtime) func-name #f)]))
 
 ;; Returns a list of the functions currently defined in the runtime.
 (define runtime-funcs
@@ -207,41 +207,49 @@
     [(_ func-name)
      #'(undefine/for-runtime (current-runtime) func-name)]))
 
-(define-syntax (define/for-runtime/io stx)
-  (syntax-parse stx
-    [(_ (name:id arg:id ...)
-        (~seq #:mode (~or* (~and (~datum i)
-                                 (~bind [uses-input? #t] [uses-output? #f]))
-                           (~and (~datum o)
-                                 (~bind [uses-input? #f] [uses-output? #f]))
-                           (~and (~or* (~datum io) (~datum oi))
-                                 (~bind [uses-input? #t] [uses-output? #t]))) ...)
-        body:expr ...+)
-     #`(define (name arg ...)
-         #,@(if (attribute uses-input?)
-                (list #'(unless (current-runtime-input-port)
-                          (raise-user-error
-                           'name
-                           "current-runtime-input-port not parameterized; did you mean to run in I/O mode?")))
-                (list))
-         #,@(if (attribute uses-output?)
-                (list #'(unless (current-runtime-output-port)
-                          (raise-user-error
-                           'name
-                           "current-runtime-output-port not parameterized; did you mean to run in I/O mode?")))
-                (list))
-         (parameterize (#,@(if (attribute uses-input?)
-                               (list #'[current-input-port (current-runtime-input-port)])
-                               (list))
-                        #,@(if (attribute uses-output?)
-                               (list #'[current-output-port (current-runtime-output-port)])
-                               (list)))
-           body ...))]))
-
 (define-syntax (define/for-runtime/io* stx)
   (syntax-parse stx
-    [(_ [(name:id arg:id ...) mode [body:expr ...+]] ...)
-     #'(begin (define/for-runtime/io (name arg ...) #:mode mode body ...) ...)]))
+    [(_ [(name:id arg:id ...)
+         (~or* (~and (~datum i)
+                     (~bind [uses-input? #t] [uses-output? #f]))
+               (~and (~datum o)
+                     (~bind [uses-input? #f] [uses-output? #f]))
+               (~and (~or* (~datum io) (~datum oi))
+                     (~bind [uses-input? #t] [uses-output? #t])))
+         [body:expr ...+]] ...)
+
+     #:with (guard ...)
+     (map (λ (name-sym i? o?)
+            (filter values
+                    (list (and i?
+                               #`(unless (current-runtime-input-port)
+                                   (raise-user-error
+                                    #,name-sym
+                                    "current-runtime-input-port not parameterized; did you mean to run in I/O mode?")))
+                          (and o?
+                               #`(unless (current-runtime-output-port)
+                                   (raise-user-error
+                                    #,name-sym
+                                    "current-runtime-output-port not parameterized; did you mean to run in I/O mode?"))))))
+          (map syntax-e (syntax->list #'(name ...)))
+          (attribute uses-input?)
+          (attribute uses-output?))
+
+     #:with (parameters ...)
+     (map (λ (i? o?)
+            (filter values
+                    (list (and i?
+                               #'[current-input-port (current-runtime-input-port)])
+                          (and o?
+                               #'[current-output-port (current-runtime-output-port)]))))
+          (attribute uses-input?)
+          (attribute uses-output?))
+
+     #'(begin
+         (define (name arg ...)
+           (~@ . guard)
+           (parameterize (~@ parameters)
+             body ...)) ...)]))
 
 (define/for-runtime/io*
   [(guarded-read-byte)    i [(let ([b (read-byte)])

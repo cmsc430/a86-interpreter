@@ -209,7 +209,8 @@
                   (make-continuation-prompt-tag 'run-emulator)])
 
     (define (emulator-proc instructions input-port output-port)
-      (let ([emulator (initialize-emulator instructions)])
+      (let ([emulator (and instructions
+                           (initialize-emulator instructions))])
         (when (persist-current-emulator?)
           (current-emulator emulator))
         (let/cc exit-proc
@@ -246,6 +247,7 @@
 ;; is useful when you want to emulate multiple programs within the same
 ;; emulation environment.
 (define (reload-emulator instructions input-port output-port)
+  ((current-emulator-after-thunk))
   (if (eq? (current-emulator-continuation-prompt-tag)
            (default-continuation-prompt-tag))
       (raise-user-error 'reload-emulator "emulator not active; cannot reload")
@@ -279,16 +281,16 @@
                      #:before   [  before-thunk #f]
                      #:during   [    body-thunk #f]
                      #:after    [   after-thunk #f]
-                     #:on-exit  [ on-exit-thunk #f]
-                     #:on-exn   [  on-exn-thunk #f]
-                     #:on-raise [on-raise-thunk #f])
+                     #:on-exit  [  on-exit-proc #f]
+                     #:on-exn   [   on-exn-proc #f]
+                     #:on-raise [ on-raise-proc #f])
   (parameterize
-      ([current-emulator-exit-handler  (or on-exit-thunk  (current-emulator-exit-handler)  default-emulator-exit-handler)]
-       [current-emulator-exn?-handler  (or on-exn-thunk   (current-emulator-exn?-handler)  default-emulator-exn?-handler)]
-       [current-emulator-raise-handler (or on-raise-thunk (current-emulator-raise-handler) default-emulator-raise-handler)]
-       [current-emulator-before-thunk  (or before-thunk   (current-emulator-before-thunk)  default-emulator-before-thunk)]
-       [current-emulator-body-thunk    (or body-thunk     (current-emulator-body-thunk)    default-emulator-body-thunk)]
-       [current-emulator-after-thunk   (or after-thunk    (current-emulator-after-thunk)   default-emulator-after-thunk)])
+      ([current-emulator-exit-handler  (or on-exit-proc  (current-emulator-exit-handler)  default-emulator-exit-handler)]
+       [current-emulator-exn?-handler  (or on-exn-proc   (current-emulator-exn?-handler)  default-emulator-exn?-handler)]
+       [current-emulator-raise-handler (or on-raise-proc (current-emulator-raise-handler) default-emulator-raise-handler)]
+       [current-emulator-before-thunk  (or before-thunk  (current-emulator-before-thunk)  default-emulator-before-thunk)]
+       [current-emulator-body-thunk    (or body-thunk    (current-emulator-body-thunk)    default-emulator-body-thunk)]
+       [current-emulator-after-thunk   (or after-thunk   (current-emulator-after-thunk)   default-emulator-after-thunk)])
     (run-emulator instructions #f #f)))
 
 ;; Calls [run-emulator] with the default parameters for I/O interpretation.
@@ -300,14 +302,14 @@
                         #:before   [  before-thunk #f]
                         #:during   [    body-thunk #f]
                         #:after    [   after-thunk #f]
-                        #:on-exit  [ on-exit-thunk #f]
-                        #:on-exn   [  on-exn-thunk #f]
-                        #:on-raise [on-raise-thunk #f])
+                        #:on-exit  [  on-exit-proc #f]
+                        #:on-exn   [   on-exn-proc #f]
+                        #:on-raise [ on-raise-proc #f])
   (parameterize
-      ([current-emulator-exit-handler  (or on-exit-thunk  (current-emulator-exit-handler)  default-emulator-exit-handler/io)]
-       [current-emulator-exn?-handler  (or on-exn-thunk   (current-emulator-exn?-handler)  default-emulator-exn?-handler/io)]
-       [current-emulator-raise-handler (or on-raise-thunk (current-emulator-raise-handler) default-emulator-raise-handler/io)]
-       [current-emulator-before-thunk  (or before-thunk   (current-emulator-before-thunk)  default-emulator-before-thunk/io)]
-       [current-emulator-body-thunk    (or body-thunk     (current-emulator-body-thunk)    default-emulator-body-thunk/io)]
-       [current-emulator-after-thunk   (or after-thunk    (current-emulator-after-thunk)   default-emulator-after-thunk/io)])
+      ([current-emulator-exit-handler  (or on-exit-proc  (current-emulator-exit-handler)  default-emulator-exit-handler/io)]
+       [current-emulator-exn?-handler  (or on-exn-proc   (current-emulator-exn?-handler)  default-emulator-exn?-handler/io)]
+       [current-emulator-raise-handler (or on-raise-proc (current-emulator-raise-handler) default-emulator-raise-handler/io)]
+       [current-emulator-before-thunk  (or before-thunk  (current-emulator-before-thunk)  default-emulator-before-thunk/io)]
+       [current-emulator-body-thunk    (or body-thunk    (current-emulator-body-thunk)    default-emulator-body-thunk/io)]
+       [current-emulator-after-thunk   (or after-thunk   (current-emulator-after-thunk)   default-emulator-after-thunk/io)])
     (run-emulator instructions input-port output-port)))

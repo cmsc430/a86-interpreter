@@ -27,7 +27,7 @@
           [current-emulator          (parameter/c emulator?)]
           [persist-current-emulator? (parameter/c boolean?)]
           [run-emulator              (-> (listof instruction?) input-port? output-port? any/c)]
-          [asm-emulate               (->* [(listof instruction?)]
+          [asm-emulate               (->* [(or/c #f (listof instruction?))]
                                           [#:before   (-> any/c)
                                            #:during   (-> any/c)
                                            #:after    (-> any/c)
@@ -35,7 +35,7 @@
                                            #:on-exn   (-> exn? any/c)
                                            #:on-raise (-> any/c any/c)]
                                           any/c)]
-          [asm-emulate/io            (->* [(listof instruction?)
+          [asm-emulate/io            (->* [(or/c #f (listof instruction?))
                                            input-port?]
                                           [output-port?
                                            #:before   (-> any/c)
