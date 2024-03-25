@@ -34,7 +34,7 @@
 ;; └────────────────────────────────┘└────────────────────────────────┘└────────────────────────────────┘
 (define-region memory
   #:width-spec  108  ;; 3 x (2 border + 12 address + 2 gap + 20 value).
-  #:height-spec   9  ;; 2 header + 5 rows + 2 border.
+  #:height-spec  25  ;; 2 header + 21 rows + 2 border.
 
   (define-field stack-heading            " Stack")
   (define-field heap-heading              " Heap")
@@ -54,6 +54,9 @@
   (define-fields
     [header-row
      first-main-row
+     content-height
+     content-lo-idx
+     content-hi-idx
      stack-left-addr-col
      stack-left-val-col
      heap-left-addr-col
@@ -66,6 +69,9 @@
       [(list from-x from-y to-x to-y)
        (set! header-row           (add1 from-y))
        (set! first-main-row       (+ 2 header-row))
+       (set! content-height       (- this-region:height 2 2))
+       (set! content-lo-idx       (- (floor (/ content-height 2))))
+       (set! content-hi-idx       (floor (/ content-height 2)))
        (set! stack-left-addr-col  (add1 from-x))
        (set! stack-left-val-col   (+ stack-left-addr-col
                                      addr-col-width
@@ -129,7 +135,8 @@
   (define-method (write-region! left-addr-col left-val-col center-addr downwards? select?)
     (term:with-saved-pos
      (let ([center-section (address-section-name (current-memory) center-addr)])
-       (for ([row-offset (in-range 5)]
+       (for ([row-offset (in-range content-height)]
+             #;[addr-idx (in-inclusive-range content-lo-idx content-hi-idx)]
              [addr-idx (in-inclusive-range -2 2)])
          (let* ([addr (word-aligned-offset center-addr
                                            (* (if downwards? -1 1) addr-idx))]
@@ -188,7 +195,7 @@
     (set! current-static-focus (and current-static-focus
                                     (list (car current-static-focus) #f)))
     (for ([transaction (reverse (current-transactions))])
-      (let ([address (transaction-address transaction)])
+      (let ([address (transaction-destination transaction)])
         (match (address-section-name (current-memory) address)
           [(? (λ (x) (eq? x stack))) (set! current-stack-focus  (list address #t))]
           [(? (λ (x) (eq? x heap)))  (set! current-heap-focus   (list address #t))]

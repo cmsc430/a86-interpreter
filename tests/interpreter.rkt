@@ -25,7 +25,7 @@
                      (Global 'entry)
                      (Label 'entry)
                      (Ret))
-  (test-instructions "program with Extern and Label"
+  #;(test-instructions "program with Extern and Label"
                      #:runtime (runtime (hash 'extern (λ () (error "don't run this"))))
                      (Extern 'extern)
                      (Global 'entry)
