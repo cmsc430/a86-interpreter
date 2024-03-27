@@ -5,7 +5,10 @@
          asm-interp
          asm-interp/io)
 
-(require "emulate.rkt")
+(require "emulate.rkt"
+         "emulate/runtime.rkt")
+
+(current-runtime fraud)
 
 (define current-objs void)
 
