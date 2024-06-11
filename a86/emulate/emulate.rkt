@@ -138,29 +138,36 @@
                                "\n")
                   (format-stacktrace (current-emulator))))))
 (define default-emulator-exn?-handler/io
-  (λ (e) (raise-user-error
-          (format "error encountered during I/O evaluation:\n\n  ~a\n  machine stack trace:\n~a\n  input unused: ~v\n  output captured: ~v"
-                  (string-join (for/list ([str (in-list (string-split
-                                                         (exn-message e)
-                                                         "\n"))])
-                                 (if (non-empty-string? str)
-                                     (string-append "  " str)
-                                     str))
-                               "\n")
-                  (string-join (for/list ([str (in-list (string-split
-                                                         (format-stacktrace (current-emulator))
-                                                         "\n"))])
-                                 (if (non-empty-string? str)
-                                     (string-append "  " str)
-                                     str))
-                               "\n")
-                  (string-append*
-                   (let read-loop ([strs '()])
-                     (match (read-string 8 (current-runtime-input-port))
-                       [(? eof-object?) (reverse strs)]
-                       [str (read-loop (cons str strs))])))
-                  (and (string-port? (current-runtime-output-port))
-                       (get-output-string (current-runtime-output-port)))))))
+  (λ (e)
+    (raise-user-error
+     (format "error encountered during I/O evaluation:\n\n  ~a\n\n  machine stack trace:\n~a\n~a\n~a"
+             (string-join (for/list ([str (in-list (string-split
+                                                    (exn-message e)
+                                                    "\n"))])
+                            (if (non-empty-string? str)
+                                (string-append "  " str)
+                                str))
+                          "\n")
+             (string-join (for/list ([str (in-list (string-split
+                                                    (format-stacktrace (current-emulator))
+                                                    "\n"))])
+                            (if (non-empty-string? str)
+                                (string-append "  " str)
+                                str))
+                          "\n")
+             (if (not (input-port? (current-runtime-input-port)))
+                 "  current-runtime-input-port not configured"
+                 (format "  input unused: ~v"
+                         (string-append*
+                          (let read-loop ([strs '()])
+                            (match (read-string 8 (current-runtime-input-port))
+                              [(? eof-object?) (reverse strs)]
+                              [str (read-loop (cons str strs))])))))
+             (if (not (output-port? (current-runtime-output-port)))
+                 "  current-runtime-output-port not configured"
+                 (format "  output captured: ~v"
+                         (and (string-port? (current-runtime-output-port))
+                              (get-output-string (current-runtime-output-port)))))))))
 
 ;; Non-exceptions that are raised are returned as the result of the emulation.
 (define default-emulator-raise-handler
