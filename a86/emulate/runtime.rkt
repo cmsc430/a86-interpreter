@@ -224,12 +224,12 @@
                     (list (and i?
                                #`(unless (current-runtime-input-port)
                                    (raise-user-error
-                                    #,name-sym
+                                    '#,name-sym
                                     "current-runtime-input-port not parameterized; did you mean to run in I/O mode?")))
                           (and o?
                                #`(unless (current-runtime-output-port)
                                    (raise-user-error
-                                    #,name-sym
+                                    '#,name-sym
                                     "current-runtime-output-port not parameterized; did you mean to run in I/O mode?"))))))
           (map syntax-e (syntax->list #'(name ...)))
           (attribute uses-input?)
