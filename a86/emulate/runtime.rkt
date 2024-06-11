@@ -111,7 +111,7 @@
                          [runtime/registers     registers]
                          [runtime/memory        memory]
                          [runtime/stack-pointer stack-pointer])
-            (apply func all-args)))))))
+            (apply func (map a86-value->signed-integer all-args))))))))
 
 ;; Resets the [current-runtime] hash.
 (define (reset-runtime) (current-runtime (runtime (hash))))

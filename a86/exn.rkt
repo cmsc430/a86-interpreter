@@ -44,15 +44,24 @@
                     (string-replace (symbol->string (syntax-e #'name))
                                     ":"
                                     "-")))
-     #'(begin (provide (struct-out full-name)
+
+     #`(begin (provide (struct-out full-name)
                        raise-func-name)
               (struct full-name parent-struct-name (extra-fields ...)
                 #:extra-constructor-name constructor-name
                 #:transparent)
-              (define (raise-func-name who format-str . args)
-                (raise (constructor-name
-                        (apply format
-                               (string-append "~s: " format-str)
-                               who
-                               args)
-                        (current-continuation-marks)))))]))
+              (define (raise-func-name . args)
+                (let-values ([(field-args other-args)
+                              (split-at args #,(length (syntax->list #'(extra-fields ...))))])
+                  (match other-args
+                    [(list* who format-str args)
+                     (raise (apply constructor-name
+                                   (apply format
+                                          (string-append "~s: " format-str)
+                                          who
+                                          args)
+                                   (current-continuation-marks)
+                                   field-args))]))))]))
+
+(define-a86-exn/provide user ())
+(define-a86-exn/provide foo (f1 f2))

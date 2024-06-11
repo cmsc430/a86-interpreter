@@ -3,7 +3,9 @@
 (provide (struct-out command)
          define-commands)
 
-(require (for-syntax racket/string
+(require "exn.rkt"
+
+         (for-syntax racket/string
                      racket/syntax
                      syntax/parse))
 
@@ -22,6 +24,7 @@
      #:with invoke-name      (format-id #'root-name "~a-invoke"           #'root-name)
      #:with name->short-help (format-id #'root-name "~a-name->short-help" #'root-name)
      #:with name->command    (format-id #'root-name "~a-name->command"    #'root-name)
+     #:with command-name?    (format-id #'root-name "~a-command-name?"    #'root-name)
      #:with (command-struct-name ...) (map (λ (name-stx) (format-id name-stx "~a-command" name-stx))
                                            (syntax->list #'(root-command-name ...)))
      #:with (formatted-help-str ...) (map (λ (help-str-stx fmt-args-stxs)
@@ -38,16 +41,16 @@
                     (list 'alias-command-names ...)
                     proc
                     formatted-help-str)) ...
-         (define root-name (list command-struct-name ...))
+         (define root-name (hasheq (~@ 'root-command-name command-struct-name) ...))
          (define (invoke-name name . args)
            (match name
              [(or 'root-command-name 'alias-command-names ...) (apply proc args)] ...
-             [_ (raise-user-error 'invoke-name "Unknown command name: ~a" name)]))
+             [_ (raise-a86-user-repl-bad-command-error name args 'invoke-name "Unknown command name: ~a" name)]))
          (define (name->short-help name)
-           (match name
-             [(or 'root-command-name 'alias-command-names ...) (command-short-help command-struct-name)] ...
-             [_ (raise-user-error 'name->short-help "Unknown command name: ~a" name)]))
+           (command-short-help (name->command name)))
          (define (name->command name)
            (match name
              [(or 'root-command-name 'alias-command-names ...) command-struct-name] ...
-             [_ (raise-user-error 'name->command "Unknown command name: ~a" name)])))]))
+             [_ (raise-a86-user-repl-bad-command-error name '() 'name->command "Unknown command name: ~a" name)]))
+         (define (command-name? name)
+           (memq name '(root-command-name ... alias-command-names ... ...))))]))
