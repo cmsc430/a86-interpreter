@@ -15,11 +15,10 @@
          current-escape-formatter/~I
          current-escape-formatter/~M
 
-         define-show
-
-         arg-join)
+         define-show)
 
 (require "../../registers.rkt"
+         "exn.rkt"
          "repl-state.rkt"
 
          (for-syntax (submod "../../utility.rkt" racket/syntax)
@@ -94,10 +93,27 @@
                    (for/fold ([new-form-parts '()]
                               [new-vs         '()]
                               [old-vs          vs]
-                              #:result (apply format
-                                              (string-append* (reverse new-form-parts))
-                                              (append (reverse new-vs)
-                                                      old-vs)))
+                              #:result
+                              (let ([fmt-str (string-append* (reverse new-form-parts))]
+                                    [all-vs  (append (reverse new-vs)
+                                                     old-vs)])
+                                (with-handlers ([exn:fail:contract:bad-format?
+                                                 (λ (e)
+                                                   (let ([n-expected (exn:fail:contract:bad-format-expected-args e)])
+                                                     (raise-a86-user-repl-format-bad-arg-count-error
+                                                      (length all-vs)
+                                                      n-expected
+                                                      all-vs
+                                                      'format-func-name
+                                                      "format string requires ~a arguments, given ~a\n  arguments were: ~a\n  format string: ~v"
+                                                      n-expected
+                                                      (length all-vs)
+                                                      (string-join (map ~s all-vs)
+                                                                   " ")
+                                                      fmt-str)))])
+                                  (apply format
+                                         fmt-str
+                                         all-vs))))
                              ([part (in-list (split-input form))])
                      (cond [(escape/id? part)
                             (let*-values ([(retriever)     (current-escape-retriever-name)]
@@ -189,6 +205,15 @@
   [<<< (λ ()
          (or (current-repl-input-port->string #:from-beginning? #t)
              ""))]
+  ;; The current position in the input string, graphically.
+  [<<^ (λ ()
+         (or (and (current-repl-input-port->string)
+                  (let ([pos (file-position* (current-repl-input-port))])
+                    (~a "^"
+                        #:width (add1 pos)
+                        #:pad-string "~"
+                        #:align 'right)))
+             ""))]
   ;; Current output string.
   [>> (λ ()
         (or (current-repl-output-port->string)
@@ -217,46 +242,38 @@
   ;; Previous step index.
   [Q previous-repl-emulator-state-index])
 
-(begin-for-syntax
-  (define-syntax-class string*
-    (pattern string:string)
-    (pattern (strings:string ...+)
-             #:attr string #`#,(string-join (map syntax-e
-                                                 (syntax->list #'(strings ...)))
-                                            "\n"))))
-
 (define-syntax (define-show stx)
+  (define-syntax-class arg-list
+    (pattern (es ...))
+    (pattern e #:attr [es 1] (list #'e)))
+
+  (define-syntax-class string*
+    (pattern s:string)
+    (pattern (strings:string ...+)
+             #:attr s #`#,(string-join (map syntax-e
+                                            (syntax->list #'(strings ...)))
+                                       "")))
+
   (syntax-parse stx
-    [(_ (name:id) fmt-str*:string* arg ...)
-     #:with fmt-str #'fmt-str*.string
-     #'(define (name)
-         (displayln (format/repl fmt-str arg ...)))]))
+    [(_ (name:id)
+        (~optional (~seq #:sep sep))
+        (~or* [          arg-str:string* (~optional args:arg-list)]
+              [condition arg-str:string* (~optional args:arg-list)]
+              ;; [condition arg-str         (~optional args:arg-list)]
+              arg-str:string*                                      ) ...)
 
-(define-syntax (format-args stx)
-  (define-syntax-class arg-string
-    (pattern string:string)
-    (pattern (strings:string ...+ args ...)))
-
-  (syntax-parse stx
-    [(_)
-     #'#f]))
-
-(define (arg-join arg-lists [sep "\n"])
-  (for/fold ([string-parts  '()]
-             [sub-arg-lists '()]
-             #:result (cons (string-join (reverse string-parts) sep)
-                            (append* (reverse sub-arg-lists))))
-            ([arg-list (in-list arg-lists)])
-    (match arg-list
-      [(? string? string-part)
-       (values (cons string-part string-parts)
-               sub-arg-lists)]
-      [(cons (? string? string-part)
-             sub-arg-list)
-       (values (cons string-part string-parts)
-               (cons sub-arg-list sub-arg-lists))]
-      [(or (cons (or #f (? void?)) _)
-           #f
-           (? void?))
-       (values string-parts
-               sub-arg-lists)])))
+     #`(define (name)
+         (for/fold ([string-parts '()]
+                    [arguments    '()]
+                    #:result (displayln
+                              (apply format/repl
+                                     (string-join (reverse string-parts) (~? sep "\n"))
+                                     (reverse arguments))))
+                   ([cond-thunk     (list (λ () (~? condition #t)) ...)]
+                    [string-part    (list arg-str.s ...)]
+                    [arg-list-thunk (list (λ () (list (~? (~@ args.es ...)))) ...)])
+           (if (cond-thunk)
+               (values (cons string-part string-parts)
+                       (append (reverse (arg-list-thunk)) arguments))
+               (values string-parts
+                       arguments))))]))

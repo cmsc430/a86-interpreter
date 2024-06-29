@@ -4,15 +4,7 @@
          show/compact)
 
 (require "format.rkt"
-         "repl-state.rkt"
-
-         #;(for-syntax (submod "../../utility.rkt" racket/syntax)
-                     racket/format
-                     racket/list
-                     racket/string
-                     syntax/parse))
-
-(struct ShowConfig (mode))
+         "repl-state.rkt")
 
 ;; [show] modes:
 ;;
@@ -90,27 +82,21 @@
 ;; program steps.
 
 (define-show (show/simple) "~q. [~f*] ~i")
-#;(define-show (show/compact) ["~Q. [~F*] ~I"
-                             "~q. [~f*] ~i"
-                             "output: \"~>>\""
-                             "input:  \"~<<\""])
 
-(define (show/compact)
-  (displayln
-   (apply format/repl
-          (arg-join (list (when (positive-integer? (current-repl-emulator-state-index))
-                            "~Q. [~F*] ~I")
-                          (list "~q. [~f*] ~i")
-                          (when (positive-integer? (file-position* (current-repl-output-port)))
-                            "output: \"~>>\"")
-                          (when (current-repl-input-port)
-                            (list "input:  \"~<<<\""
-                                  "pos:     ~a" (~a "^"
-                                                    #:width (add1 (file-position* (current-repl-input-port)))
-                                                    #:pad-string "~"
-                                                    #:align 'right)) ))))))
-
-
+(define-show (show/compact)
+  ;; When we're not at the beginning state, show the previous
+  ;; state as well.
+  [(positive-integer? (current-repl-emulator-state-index))
+   "~Q. [~F*] ~I"]
+  ;; Always show the current state.
+  "~q. [~f*] ~i"
+  ;; If there is any output, show it all.
+  [(positive-integer? (file-position* (current-repl-output-port)))
+   "output: \"~>>\""]
+  ;; If an input port is initialized, its consumption state.
+  [(current-repl-input-port)
+   ("input:  \"~<<<\"\n"
+    "pos:     ~<<^")])
 
 ;; FIXME -----------------------------------------------------------------------
 #;(format/repl "overflow? ~f\nrax: ~r\nlast instruction: ~I" 'OF 'rax)

@@ -20,10 +20,11 @@
 (provide (all-defined-out))
 
 (module* main #f
-  (define input-file   (make-parameter #f))
-  (define input-string (make-parameter #f))
-  (define runtime      (make-parameter #f))
-  (define show-mode    (make-parameter 'simple))
+  (define input-file    (make-parameter #f))
+  (define input-string  (make-parameter #f))
+  (define runtime       (make-parameter #f))
+  (define show-mode     (make-parameter 'simple))
+  (define catch-errors? (make-parameter #t))
   (command-line
    #:once-each
    [("-f" "--file")    path
@@ -44,16 +45,21 @@
    [("-r" "--runtime") rt
                        "The runtime to use"
                        (runtime (name->runtime (string->symbol rt)))]
+   [("-E" "--errors")  "Disables error suppression"
+                       (catch-errors? #f)]
    #:args ()
    (initialize-repl (input-file)
                     (input-string)
                     (runtime)
-                    (show-mode))))
+                    (show-mode)
+                    (catch-errors?))))
 
 (define (repl-loop)
   (with-handlers ([exn? (λ (e)
-                          (displayln (exn-message e))
-                          (repl-loop))])
+                          (if (repl-catch-errors?)
+                              (begin (displayln (exn-message e))
+                                     (repl-loop))
+                              (raise e)))])
     (match (parse (prompt))
       [(cons command args)
        (with-handlers ([exn:fail:a86:user:repl:bad-command?
@@ -169,6 +175,7 @@
    [(:help :h :?) display-help "Displays helpful information (allegedly)."]
    [(:load :l)    load-program "Loads an a86 program from a given file path."]))
 
+(define repl-catch-errors? (make-parameter #t))
 ;; TODO: We need I/O versions of these to be useful.
 ;;
 ;; TODO: Need an input port that we can track positions in.
@@ -192,17 +199,18 @@
 (define repl-emulator-exn?-handler  default-emulator-exn?-handler/io)
 (define repl-emulator-raise-handler default-emulator-raise-handler/io)
 
-(define (initialize-repl [input-file   #f]
-                         [input-string #f]
-                         [runtime      #f]
-                         [show-mode    'simple])
+(define (initialize-repl [input-file    #f]
+                         [input-string  #f]
+                         [runtime       #f]
+                         [show-mode     'simple]
+                         [catch-errors? #t])
   (let ([instructions (and input-file
                            (read-instructions-from-file input-file))]
-        [in (and input-string
-                 (open-input-string input-string))]
+        [in  (open-input-string (or input-string ""))]
         [out (open-output-string)])
     (parameterize
-        ([current-runtime-input-port     in]
+        ([repl-catch-errors?             catch-errors?]
+         [current-runtime-input-port     in]
          [current-runtime-output-port    out]
          [current-emulator-exit-handler  repl-emulator-exit-handler]
          [current-emulator-exn?-handler  repl-emulator-exn?-handler]

@@ -85,6 +85,7 @@
 (define (current-repl-input-port->string #:from-beginning? [from-beginning? #f])
   (let ([in (current-repl-input-port)])
     (and in
+         (input-port? in)
          (let ([fp (file-position* in)]
                [_  (when from-beginning?
                      (file-position in 0))]
