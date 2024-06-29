@@ -213,7 +213,7 @@
          (~or* (~and (~datum i)
                      (~bind [uses-input? #t] [uses-output? #f]))
                (~and (~datum o)
-                     (~bind [uses-input? #f] [uses-output? #f]))
+                     (~bind [uses-input? #f] [uses-output? #t]))
                (~and (~or* (~datum io) (~datum oi))
                      (~bind [uses-input? #t] [uses-output? #t])))
          [body:expr ...+]] ...)

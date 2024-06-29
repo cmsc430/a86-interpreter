@@ -312,16 +312,10 @@
                         #:on-exit  [  on-exit-proc #f]
                         #:on-exn   [   on-exn-proc #f]
                         #:on-raise [ on-raise-proc #f])
-  ;; FIXME: Emergency stopgap measure.
-  (let ([out (open-output-string)])
-    (parameterize ([current-output-port out])
-      (match (parameterize
-                 ([current-emulator-exit-handler  (or on-exit-proc  (current-emulator-exit-handler)  default-emulator-exit-handler/io)]
-                  [current-emulator-exn?-handler  (or on-exn-proc   (current-emulator-exn?-handler)  default-emulator-exn?-handler/io)]
-                  [current-emulator-raise-handler (or on-raise-proc (current-emulator-raise-handler) default-emulator-raise-handler/io)]
-                  [current-emulator-before-thunk  (or before-thunk  (current-emulator-before-thunk)  default-emulator-before-thunk/io)]
-                  [current-emulator-body-thunk    (or body-thunk    (current-emulator-body-thunk)    default-emulator-body-thunk/io)]
-                  [current-emulator-after-thunk   (or after-thunk   (current-emulator-after-thunk)   default-emulator-after-thunk/io)])
-               (run-emulator instructions input-port output-port))
-        [(cons r _)
-         (cons r (get-output-string out))]))))
+  (parameterize ([current-emulator-exit-handler  (or on-exit-proc  (current-emulator-exit-handler)  default-emulator-exit-handler/io)]
+                 [current-emulator-exn?-handler  (or on-exn-proc   (current-emulator-exn?-handler)  default-emulator-exn?-handler/io)]
+                 [current-emulator-raise-handler (or on-raise-proc (current-emulator-raise-handler) default-emulator-raise-handler/io)]
+                 [current-emulator-before-thunk  (or before-thunk  (current-emulator-before-thunk)  default-emulator-before-thunk/io)]
+                 [current-emulator-body-thunk    (or body-thunk    (current-emulator-body-thunk)    default-emulator-body-thunk/io)]
+                 [current-emulator-after-thunk   (or after-thunk   (current-emulator-after-thunk)   default-emulator-after-thunk/io)])
+    (run-emulator instructions input-port output-port)))
