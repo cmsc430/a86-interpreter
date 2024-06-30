@@ -137,17 +137,19 @@
        [#f index]
        [_ (raise-a86-error who "invalid step: ~v" step)])]))
 
-(define (emulator-state [emulator #f] [step #f])
-  (set! emulator (or emulator (current-emulator)))
+(define (emulator-state [emulator (current-emulator)] [step #f])
   (unless emulator
     (error 'emulator-state "no emulator set!"))
   (vector-ref (Emulator-states emulator)
               (normalize-step-to-state-index 'emulator-state emulator step)))
 
-(define (emulator-step! [emulator #f])
-  (set! emulator (or emulator (current-emulator)))
+(define (emulator-step! [emulator (current-emulator)])
   (match emulator
     [(Emulator states old-index memory labels->addresses)
+     ;; TODO: Add new [exn?] for attempting to take a step when no steps can be
+     ;; taken, and maybe add a flag to [Emulator] that indicates whether steps
+     ;; can still be taken. When no steps can be taken, raise the exception here
+     ;; as well, and it should be handled elsewhere.
      (let* ([new-index (add1 old-index)]
             [states-length (vector-length states)]
             ;; We check to see if we've already computed the next state.
@@ -173,8 +175,7 @@
 ;; The maximum number of steps can be parameterized.
 (define emulator-step-count (make-parameter 1000))
 
-(define (emulator-multi-step! [emulator #f])
-  (set! emulator (or emulator (current-emulator)))
+(define (emulator-multi-step! [emulator (current-emulator)])
   (debug "labels->addresses:")
   (for ([(label address) (in-hash (Emulator-labels->addresses emulator))])
     (debug "  ~v\t~a" label (format-word address 'hex)))
@@ -197,18 +198,17 @@
 
 ;; NOTE: Cannot step backwards past the first state.
 ;; TODO: Should this raise an exception instead?
-(define (emulator-step-back! [emulator #f])
-  (set! emulator (or emulator (current-emulator)))
+(define (emulator-step-back! [emulator (current-emulator)])
   (set-Emulator-current-index!
    emulator
    (max (sub1 (Emulator-current-index emulator))
         0)))
 
-(define (emulator->flags [emulator #f] [step #f])
-  (StepState-flags (emulator-state (or emulator (current-emulator)) step)))
+(define (emulator->flags [emulator (current-emulator)] [step #f])
+  (StepState-flags (emulator-state emulator step)))
 
-(define (emulator->registers [emulator #f] [step #f])
-  (StepState-registers (emulator-state (or emulator (current-emulator)) step)))
+(define (emulator->registers [emulator (current-emulator)] [step #f])
+  (StepState-registers (emulator-state emulator step)))
 
 (define emulator-flag-ref
   (case-lambda
