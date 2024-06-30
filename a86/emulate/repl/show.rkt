@@ -93,10 +93,12 @@
   ;; If there is any output, show it all.
   [(positive-integer? (file-position* (current-repl-output-port)))
    "output: \"~>>\""]
-  ;; If an input port is initialized, its consumption state.
+  ;; If there is an input, show it.
   [(current-repl-input-port)
-   ("input:  \"~<<<\"\n"
-    "pos:     ~<<^")])
+   "input:  \"~<<<\""]
+  ;; If any input has been consumed, show how much.
+  [(positive-integer? (file-position* (current-repl-input-port)))
+   "pos:     ~<<^"])
 
 ;; FIXME -----------------------------------------------------------------------
 #;(format/repl "overflow? ~f\nrax: ~r\nlast instruction: ~I" 'OF 'rax)
