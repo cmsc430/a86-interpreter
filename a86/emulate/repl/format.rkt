@@ -15,9 +15,12 @@
          current-escape-formatter/~I
          current-escape-formatter/~M
 
-         define-show)
+         define-show
+
+         format-memory)
 
 (require "../../registers.rkt"
+         "../../utility.rkt"
          "exn.rkt"
          "repl-state.rkt"
 
@@ -25,7 +28,8 @@
                      racket/format
                      racket/list
                      racket/string
-                     syntax/parse))
+                     syntax/parse
+                     syntax/parse/lib/function-header))
 
 (define-syntax (define-format-for-show stx)
 
@@ -153,6 +157,7 @@
 ;;   * [~f*] or [~F*] --- (curr/prev) flags (all four)
 ;;   * [~r]  or [~R]  --- (curr/prev) register
 ;;   * [~r*] or [~R*] --- (curr/prev) registers (list of registers)
+;;   * [~r&] or [~R&] --- (curr/prev) register dereference
 ;;   * [~i]  or [~I]  --- (curr/prev) instruction
 ;;   * [~m]  or [~M]  --- (curr/prev) memory address
 ;;   * [~l]  or [~L]  --- label of address OR address of label
@@ -182,6 +187,17 @@
   ;; Multiple current register values.
   [r* (λ (rs) (map current-repl-register-ref rs))
       (λ (rvs _) (string-join (map (current-escape-formatter/~r) rvs) ", "))]
+  ;; Current value in memory at register address. The argument can be a register
+  ;; or a list of a register with an integer, in which case the integer is
+  ;; treated as a byte offset.
+  [r& (λ (r+o)
+        (match r+o
+          [(or (? register? r)
+               (list (? register? r)))
+           (current-repl-memory-ref (current-repl-register-ref r))]
+          [(list (? register? r) (? exact-integer? o))
+           (current-repl-memory-ref (+ o (current-repl-register-ref r)))]))
+      (λ (mv x) ((current-escape-formatter/~m) mv x))]
   ;; Current instruction.
   [i current-repl-instruction
      ~v]
@@ -233,6 +249,17 @@
   ;; Multiple previous register values.
   [R* (λ (rs) (map previous-repl-register-ref rs))
       (λ (rvs _) ((current-escape-formatter/~r*) rvs))]
+  ;; Value in memory at register address in previous step of interpreter. The
+  ;; argument can be a register or a list of a register with an integer, in
+  ;; which case the integer is treated as a byte offset.
+  [R& (λ (r+o)
+        (match r+o
+          [(or (? register? r)
+               (list (? register? r)))
+           (previous-repl-memory-ref (previous-repl-register-ref r))]
+          [(list (? register? r) (? exact-integer? o))
+           (previous-repl-memory-ref (+ o (previous-repl-register-ref r)))]))
+      (λ (mv x) ((current-escape-formatter/~r&) mv x))]
   ;; Previous instruction.
   [I previous-repl-instruction
      (λ (iv) ((current-escape-formatter/~i) iv))]
@@ -255,14 +282,13 @@
                                        "")))
 
   (syntax-parse stx
-    [(_ (name:id)
+    [(_ (name:id . formals:formals)
         (~optional (~seq #:sep sep))
         (~or* [          arg-str:string* (~optional args:arg-list)]
               [condition arg-str:string* (~optional args:arg-list)]
-              ;; [condition arg-str         (~optional args:arg-list)]
               arg-str:string*                                      ) ...)
 
-     #`(define (name)
+     #`(define (name . formals)
          (for/fold ([string-parts '()]
                     [arguments    '()]
                     #:result (displayln
@@ -277,3 +303,45 @@
                        (append (reverse (arg-list-thunk)) arguments))
                (values string-parts
                        arguments))))]))
+
+;; Returns a string formatting values in memory with their addresses, where the
+;; high addresses are displayed at the top, and each word is visually divided
+;; with borders.
+(define (format-memory base n)
+  (unless (not (zero? n))
+    (raise-argument-error 'format-memory "non-zero integer?" n))
+  (let*-values ([(base-address) (match base
+                                  [(? register?) (current-repl-register-ref base)]
+                                  [(? address?)  base])]
+                [(as+vses max-string-length max-address-length)
+                 (for/fold ([as+vses            '()]
+                            [max-string-length    0]
+                            [max-address-length   0])
+                           ([i (in-range (abs n))])
+                   ;; We want the high addresses to appear first, so if [n] is
+                   ;; positive we start with the greatest offset, and if [n] is
+                   ;; negative we start with the zero offset.
+                   (let* ([a (if (positive? n)
+                                 (+ base-address (*  8 (- n (add1 i))))
+                                 (+ base-address (* -8 i)))]
+                          [vs (format/repl "~m" a)]
+                          [as (~r a #:base 16)])
+                     (values (cons (cons as vs) as+vses)
+                             (max max-string-length  (string-length vs))
+                             (max max-address-length (string-length as)))))]
+                [(divider) (format "+~a+" (make-string (+ 2 max-string-length) "-"))])
+    #f
+    (string-join (cons divider
+                       (map (match-lambda
+                              [(cons as vs)
+                               (format "| ~a |\n~a  0x~a\n"
+                                       (~a vs
+                                           #:width max-string-length
+                                           #:align 'right)
+                                       divider
+                                       (~a as
+                                           #:width max-address-length
+                                           #:pad-string "0"
+                                           #:align 'right))])
+                            as+vses))
+                 "")))
