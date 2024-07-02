@@ -64,4 +64,3 @@
                                    field-args))]))))]))
 
 (define-a86-exn/provide user ())
-(define-a86-exn/provide foo (f1 f2))

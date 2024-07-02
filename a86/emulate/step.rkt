@@ -15,6 +15,7 @@
                     [register-set/truncate  original-register-set/truncate]
                     [register-set*/truncate original-register-set*/truncate])
 
+         "exn.rkt"
          "runtime.rkt"
          "state.rkt"
          (rename-in "memory.rkt"
@@ -283,7 +284,7 @@
                             (address-range memory text)])
                  (unless (and (>= new-ip lo-address)
                               (<= new-ip hi-address))
-                   (raise-user-error 'segfault "invalid instruction pointer: ~v" new-ip))))]
+                   (raise-a86-emulator-segfault-error 'assert-ip-valid! "invalid instruction pointer: ~v" new-ip))))]
             ;; Called as the last step for every instruction's implementation.
             ;; The time tick is incremented, and other values are set as needed.
             [make-step-state

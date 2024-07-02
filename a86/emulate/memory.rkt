@@ -32,6 +32,7 @@
 (require "../debug.rkt"
          "../utility.rkt"
 
+         "exn.rkt"
          "sections.rkt")
 
 ;; Memory Representation
@@ -219,11 +220,11 @@
                                  (cons section-range ranges))]))])
         (Memory names sections ranges)))))
 
-;; Performs an address lookup, raising a ['segfault] error on failure. On
-;; success, returns the internal index corresponding to the address.
+;; Performs an address lookup, raising a segfault error on failure. On success,
+;; returns the internal index corresponding to the address.
 (define/debug (address-lookup memory address)
   (or (Memory-address->section-index memory address)
-      (raise-user-error 'segfault "cannot access address ~v" address)))
+      (raise-a86-emulator-segfault-error 'address-lookup "cannot access address ~v" address)))
 
 ;; Converts an address into a section name, a [Section?], and an offset
 ;; calculated to index into the [Section?] directly.
@@ -349,7 +350,7 @@
   (let-values ([(name section offset) (address->section+offset memory address)]
                [(byte-offset) (remainder address word-size-bytes)])
     (unless (member name read-write-sections)
-      (raise-user-error 'segfault "cannot write to address ~v in section ~a" address name))
+      (raise-a86-emulator-segfault-error 'memory-set! "cannot write to address ~v in section ~a" address name))
     (unless (<= byte-count word-size-bytes)
       (error 'memory-set! "expected byte-count less than ~a; got ~a" word-size-bytes byte-count))
     (cond

@@ -14,7 +14,9 @@
          heap-allocate-space!
          heap-free-space!)
 
-(require "../debug.rkt")
+(require "../debug.rkt"
+
+         "exn.rkt")
 
 ;; A pair of a time tick with a value. These are used for keeping track of
 ;; "when" a value was introduced to the machine.
@@ -131,7 +133,7 @@
           (vector-set! contents
                        adjusted-offset
                        (add-cell (vector-ref contents adjusted-offset) cell)))
-        (error 'segfault "no heap allocation for offset: ~v" offset))))
+        (raise-a86-emulator-segfault-error "no heap allocation for offset: ~v" offset))))
 
 ;; Extends the heap by allocating more memory.
 (define/debug (heap-allocate-space! heap new-allocation-size)
@@ -139,7 +141,7 @@
         [max-size (Heap-max-size heap)])
     (when (> (+ new-allocation-size curr-size)
              max-size)
-      (error 'segfault "cannot expand heap by ~v words" new-allocation-size))
+      (raise-a86-emulator-segfault-error 'heap-allocate-space! "cannot expand heap by ~v words" new-allocation-size))
     (let ([allocation-contents (make-vector new-allocation-size #f)]
           [new-size (+ curr-size new-allocation-size)])
       (set-Heap-allocations!
