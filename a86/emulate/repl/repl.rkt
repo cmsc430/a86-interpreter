@@ -92,48 +92,77 @@
        [else
         (displayln (format "unknown 'show' mode: ~a" (current-repl-show-mode)))])]
     [else
-     (let/ec abort
-        (match (first xs)
-          [(or 'f 'fs 'flag 'flags)
-           (displayln (string-join
-                       (map (compose1
-                             (λ (f) (format/repl "~a: ~f!" f f))
-                             (λ (f)
-                               (if (flag? f)
-                                   f
-                                   (abort (displayln (format "unknown flag in 'show ~a': ~a" (first xs) f)))))
-                             string->symbol
-                             (λ (s)
-                               (match (string-length s)
-                                 [1 (string-append s "F")]
-                                 [2 s]
-                                 [_ (abort (displayln (format "unknown flag in 'show ~a': ~a" (first xs) s)))]))
-                             string-upcase
-                             symbol->string)
-                            (rest xs))
-                       "\n"))]
-          [(or 'r 'rs 'reg 'regs 'register 'registers)
-           (displayln (string-join
-                       (map (compose1
-                             ;; TODO: debug why ~r is also printing the name of the register.
-                             ;; I think [expand]ing the [define-format-for-show] macro used
-                             ;; for [format/repl] will help here
-                             (λ (r) (format/repl "~a: ~r foo" r r))
-                             (λ (r)
-                               (if (register? r)
-                                   r
-                                   (abort (displayln (format "unknown register in 'show ~a': ~a" (first xs) r))))))
-                            (rest xs))
-                       "\n"))]
-          [_
-           (for ([x (in-list xs)])
-             (match x
-               [(? flag?)
-                (displayln (format/repl "~a: ~f!" x x))]
-               [(? register?)
-                (displayln (format/repl "~a: ~r" x x))]
-               [_
-                (abort (displayln (format "unknown 'show' argument: ~a" x)))]))]))]))
+     (show-dispatch (first xs) (rest xs))]))
+
+(define (show-dispatch x xs)
+  (let/ec abort
+    (case x
+      ;; Display part of the stack.
+      ;;
+      ;; NOTE: We assume [rsp] holds the stack pointer.
+      [(s st stack)
+       (match xs
+         [(cons (? positive-integer? n) _)
+          (displayln (format-memory 'rsp n))]
+         [_
+          (displayln (format-memory 'rsp 4))])]
+      ;; Display part of the heap.
+      ;;
+      ;; NOTE: We assume [rbx] holds the heap pointer, since that is the
+      ;; convention followed in our class.
+      ;;
+      ;; TODO: Make this setting configurable.
+      [(h hp heap)
+       (match xs
+         [(cons (? positive-integer? n) _)
+          (displayln (format-memory 'rbx (* -1 n)))]
+         [_
+          (displayln (format-memory 'rbx -4))])]
+      ;; Display flag(s).
+      [(f fs flag flags)
+       (displayln
+        (string-join
+         (map (compose1
+               (λ (f) (format/repl "~a: ~f!" f f))
+               (λ (f)
+                 (if (flag? f)
+                     f
+                     (abort (displayln (format "unknown flag in 'show ~a': ~a" x f)))))
+               string->symbol
+               (λ (s)
+                 (match (string-length s)
+                   [1 (string-append s "F")]
+                   [2 s]
+                   [_ (abort (displayln (format "unknown flag in 'show ~a': ~a" x s)))]))
+               string-upcase
+               symbol->string)
+              xs)
+         "\n"))]
+      ;; Display register(s).
+      [(r rs register registers)
+       (displayln
+        (string-join
+         (map (compose1
+               ;; TODO: debug why ~r is also printing the name of the register.
+               ;; I think [expand]ing the [define-format-for-show] macro used
+               ;; for [format/repl] will help here
+               (λ (r) (format/repl "~a: ~r foo" r r))
+               (λ (r)
+                 (if (register? r)
+                     r
+                     (abort (displayln (format "unknown register in 'show ~a': ~a" x r))))))
+              xs)
+         "\n"))]
+      ;; Attempt to display the arguments.
+      [else
+       (for ([x (in-list xs)])
+         (match x
+           [(? flag?)
+            (displayln (format/repl "~a: ~f!" x x))]
+           [(? register?)
+            (displayln (format/repl "~a: ~r" x x))]
+           [_
+            (abort (displayln (format "unknown 'show' argument: ~a" x)))]))])))
 
 (define (step-next [steps 1])
   (for ([_ (in-range steps)])
@@ -196,7 +225,7 @@
     (current-repl-state #f)))
 (define repl-emulator-body-thunk    repl-loop)
 (define repl-emulator-exit-handler  default-emulator-exit-handler/io)
-(define repl-emulator-exn?-handler  default-emulator-exn?-handler/io)
+(define repl-emulator-exn?-handler  (λ (e) (raise e)))
 (define repl-emulator-raise-handler default-emulator-raise-handler/io)
 
 (define (initialize-repl [input-file    #f]
