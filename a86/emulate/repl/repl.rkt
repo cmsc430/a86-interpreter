@@ -4,6 +4,7 @@
          "../../registers.rkt"
 
          "../emulate.rkt"
+         "../exn.rkt"
          "../runtime.rkt"
 
          "commands.rkt"
@@ -225,8 +226,13 @@
     (current-repl-state #f)))
 (define repl-emulator-body-thunk    repl-loop)
 (define repl-emulator-exit-handler  default-emulator-exit-handler/io)
-(define repl-emulator-exn?-handler  (λ (e) (raise e)))
 (define repl-emulator-raise-handler default-emulator-raise-handler/io)
+(define repl-emulator-exn?-handler
+  (λ (e)
+    (match e
+      [(? exn?)
+       (displayln (default-emulator-exn?-formatter/io e))
+       (raise-a86-emulator-resume-error 'repl-emulator-exn?-handler)])))
 
 (define (initialize-repl [input-file    #f]
                          [input-string  #f]
