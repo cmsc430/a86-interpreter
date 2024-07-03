@@ -140,7 +140,7 @@
                                                    part)])))
                  format-func-name)))))]))
 
-(define current-memory-value-width (make-parameter 20))
+(define current-memory-value-width (make-parameter 18))
 
 ;; Formats a string similar to [format], but with custom format escapes for the
 ;; a86 REPL.
@@ -204,13 +204,17 @@
   ;; Current value at a memory address.
   [m current-repl-memory-ref
      (λ (mv _)
-       (~a "0x"
-           (~r mv
-               #:base 16
-               #:min-width 16
-               #:pad-string "0")
-           #:width (current-memory-value-width)
-           #:align 'right))]
+       (if (address? mv)
+           (~a "0x"
+               (~r mv
+                   #:base 16
+                   #:min-width 16
+                   #:pad-string "0")
+               #:width (current-memory-value-width)
+               #:align 'right)
+           (~a mv
+               #:width (current-memory-value-width)
+               #:align 'right)))]
   ;; Current step index.
   [q current-repl-emulator-state-index]
   ;; Current remaining input in the input string.
@@ -317,24 +321,26 @@
                  (for/fold ([as+vses            '()]
                             [max-string-length    0]
                             [max-address-length   0])
-                           ([i (in-range (abs n))])
-                   ;; We want the high addresses to appear first, so if [n] is
-                   ;; positive we start with the greatest offset, and if [n] is
-                   ;; negative we start with the zero offset.
-                   (let* ([a (if (positive? n)
-                                 (+ base-address (*  8 (- n (add1 i))))
-                                 (+ base-address (* -8 i)))]
-                          [vs (format/repl "~m" a)]
-                          [as (~r a #:base 16)])
+                           ([i (in-range (abs n))]
+                            ;; We want the high addresses to appear first, so if
+                            ;; [n] is positive we start with the greatest
+                            ;; offset, and if [n] is negative we start with the
+                            ;; zero offset.
+                            #:do [(define a (if (positive? n)
+                                                (+ base-address (*  8 (- n (add1 i))))
+                                                (+ base-address (* -8 i))))]
+                            #:when (current-repl-address-readable? a))
+                   (let ([vs (format/repl "~m" a)]
+                         [as (~r a #:base 16)])
                      (values (cons (cons as vs) as+vses)
                              (max max-string-length  (string-length vs))
                              (max max-address-length (string-length as)))))]
-                [(divider) (format "+~a+" (make-string (+ 2 max-string-length) "-"))])
+                [(divider) (format "+~a+" (make-string (+ 2 max-string-length) #\-))])
     #f
     (string-join (cons divider
                        (map (match-lambda
                               [(cons as vs)
-                               (format "| ~a |\n~a  0x~a\n"
+                               (format "\n| ~a |\n~a  0x~a"
                                        (~a vs
                                            #:width max-string-length
                                            #:align 'right)
