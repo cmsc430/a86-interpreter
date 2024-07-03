@@ -34,6 +34,7 @@
          asm-emulate/io)
 
 (require "emulator.rkt"
+         "exn.rkt"
          "runtime.rkt"
          "stacktrace.rkt"
          "../utility.rkt")
@@ -229,21 +230,22 @@
         (let/cc exit-proc
           (parameterize ([current-emulator               emulator]
                          [current-runtime-input-port   input-port]
-                         [current-runtime-output-port output-port])
+                         [current-runtime-output-port output-port]
+                         [exit-emulator                 exit-proc])
+            ;; TODO: Enable [exit-emulator] within [current-emulator-body-thunk]
+            ;; and make the thunk loop by default. I think the only case where
+            ;; we want the emulator to stop is manually anyway?
             ((current-emulator-before-thunk))
             (parameterize ([exit-handler
-                            (λ args
-                              (parameterize ([exit-emulator exit-proc])
-                                (apply (current-emulator-exit-handler) args)))])
-              (with-handlers ([exn?
-                               (λ args
-                                 (parameterize ([exit-emulator exit-proc])
-                                   (apply (current-emulator-exn?-handler) args)))]
-                              [(λ _ #t)
-                               (λ args
-                                 (parameterize ([exit-emulator exit-proc])
-                                   (apply (current-emulator-raise-handler) args)))])
-                ((current-emulator-body-thunk))))
+                            (λ args (apply (current-emulator-exit-handler) args))])
+              (let loop ()
+                (with-handlers ([exn:fail:a86:emulator:resume?
+                                 (λ _ (loop))])
+                  (with-handlers ([exn?
+                                   (λ args (apply (current-emulator-exn?-handler) args))]
+                                  [(λ _ #t)
+                                   (λ args (apply (current-emulator-raise-handler) args))])
+                    ((current-emulator-body-thunk))))))
             ((current-emulator-after-thunk))))))
 
     (define (emulator-prompt-handler instructions input-port output-port)
@@ -281,11 +283,7 @@
 (define exit-emulator
   (make-parameter
    (λ _
-     (raise-user-error 'exit-emulator
-                       "only available within the body of ~a, ~a, and ~a"
-                       "current-emulator-exit-handler"
-                       "current-emulator-exn?-handler"
-                       "current-emulator-raise-handler"))))
+     (raise-user-error 'exit-emulator "only available within an active emulator loop"))))
 
 ;; Calls [run-emulator] with the default parameters for non-I/O interpretation.
 ;; However, parameters can either be overridden by using a keyword argument or
