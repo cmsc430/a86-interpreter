@@ -16,6 +16,8 @@
          current-repl-emulator-state-index
          current-repl-instruction-pointer
          current-repl-memory
+         current-repl-address-readable?
+         current-repl-address-writable?
          current-repl-flags
          current-repl-registers
          current-repl-eabels->addresses
@@ -46,6 +48,7 @@
 
 (require "../../exn.rkt"
          "../emulator.rkt"
+         "../memory.rkt"
          "../state.rkt"
          (submod "../emulator.rkt" private)
 
@@ -118,6 +121,12 @@
 
 (define (current-repl-memory)
   (Emulator-memory (current-repl-emulator)))
+
+(define (current-repl-address-readable? address)
+  (address-readable? (current-repl-memory) address))
+
+(define (current-repl-address-writable? address)
+  (address-writable? (current-repl-memory) address))
 
 (define (current-repl-flags)
   (emulator->flags (current-repl-emulator)))
