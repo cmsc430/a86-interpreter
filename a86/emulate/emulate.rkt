@@ -19,6 +19,8 @@
          default-emulator-after-thunk/io
          default-emulator-exit-handler
          default-emulator-exit-handler/io
+         default-emulator-exn?-formatter
+         default-emulator-exn?-formatter/io
          default-emulator-exn?-handler
          default-emulator-exn?-handler/io
          default-emulator-raise-handler
@@ -121,26 +123,20 @@
 (define default-emulator-exit-handler    (λ (v) (raise-user-error "program exited with status ~a" v)))
 (define default-emulator-exit-handler/io (λ (v) (raise-user-error "program exited with status ~a" v)))
 
-;; When an exception occurs during execution, the exception is reproduced and a
-;; stack trace is given.
-;;
-;; The I/O version also shows what input was not consumed yet, and what output
-;; was captured prior the exception being raised.
-(define default-emulator-exn?-handler
-  (λ (e) (raise-user-error
-          (format "error encountered during evaluation:\n\n~a\nmachine stack trace:\n~a"
-                  (string-join (for/list ([str (in-list (string-split
-                                                         (exn-message e)
-                                                         "\n"))])
-                                 (if (non-empty-string? str)
-                                     (string-append "  " str)
-                                     str))
-                               "\n")
-                  (format-stacktrace (current-emulator))))))
-(define default-emulator-exn?-handler/io
+(define default-emulator-exn?-formatter
   (λ (e)
-    (raise-user-error
-     (format "error encountered during I/O evaluation:\n\n  ~a\n\n  machine stack trace:\n~a\n~a\n~a"
+    (format "error encountered during evaluation:\n\n~a\nmachine stack trace:\n~a"
+            (string-join (for/list ([str (in-list (string-split
+                                                   (exn-message e)
+                                                   "\n"))])
+                           (if (non-empty-string? str)
+                               (string-append "  " str)
+                               str))
+                         "\n")
+            (format-stacktrace (current-emulator)))))
+(define default-emulator-exn?-formatter/io
+  (λ (e)
+    (format "error encountered during I/O evaluation:\n\n  ~a\n\n  machine stack trace:\n~a\n~a\n~a"
              (string-join (for/list ([str (in-list (string-split
                                                     (exn-message e)
                                                     "\n"))])
@@ -167,7 +163,17 @@
                  "  current-runtime-output-port not configured"
                  (format "  output captured: ~v"
                          (and (string-port? (current-runtime-output-port))
-                              (get-output-string (current-runtime-output-port)))))))))
+                              (get-output-string (current-runtime-output-port))))))))
+
+;; When an exception occurs during execution, the exception is reproduced and a
+;; stack trace is given.
+;;
+;; The I/O version also shows what input was not consumed yet, and what output
+;; was captured prior the exception being raised.
+(define default-emulator-exn?-handler
+  (λ (e) (raise-user-error (default-emulator-exn?-formatter e))))
+(define default-emulator-exn?-handler/io
+  (λ (e) (raise-user-error (default-emulator-exn?-formatter/io e))))
 
 ;; Non-exceptions that are raised are returned as the result of the emulation.
 (define default-emulator-raise-handler
