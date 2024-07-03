@@ -54,6 +54,11 @@
                 (let-values ([(field-args other-args)
                               (split-at args #,(length (syntax->list #'(extra-fields ...))))])
                   (match other-args
+                    [(list who)
+                     (raise (apply constructor-name
+                                   (~s who)
+                                   (current-continuation-marks)
+                                   field-args))]
                     [(list* who format-str args)
                      (raise (apply constructor-name
                                    (apply format
