@@ -173,7 +173,7 @@
        (set-Emulator-current-index! emulator new-index))]))
 
 ;; The maximum number of steps can be parameterized.
-(define emulator-step-count (make-parameter 1000))
+(define emulator-step-count (make-parameter 10000))
 
 (define (emulator-multi-step! [emulator (current-emulator)])
   (debug "labels->addresses:")

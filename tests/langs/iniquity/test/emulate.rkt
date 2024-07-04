@@ -203,7 +203,7 @@
                              (void)
                              (begin (write-byte (- 123 i))
                                     (print-alphabet (sub1 i)))))
-                       (print-alphabet 26)])]  ;; TODO: write minimal C runtime and test code on processor
+                       (print-alphabet 26)])]
                  [("a" ,(void))  (""   [(define (f x)
                                           (write-byte x))
                                         (f 97)])]
