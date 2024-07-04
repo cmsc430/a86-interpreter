@@ -2,6 +2,7 @@
 
 (require "../../instructions.rkt"
          "../../registers.rkt"
+         "../../utility.rkt"
 
          "../emulate.rkt"
          "../exn.rkt"
@@ -103,22 +104,29 @@
       ;; NOTE: We assume [rsp] holds the stack pointer.
       [(s st stack)
        (match xs
-         [(cons (? positive-integer? n) _)
+         [(list (? positive-integer? n))
           (displayln (format-memory 'rsp n))]
+         [(list (? number? n))
+          (abort (displayln "numerical argument to 'show ~a' must be a positive integer; got ~a" x n))]
          [_
           (displayln (format-memory 'rsp 4))])]
-      ;; Display part of the heap.
-      ;;
-      ;; NOTE: We assume [rbx] holds the heap pointer, since that is the
-      ;; convention followed in our class.
-      ;;
-      ;; TODO: Make this setting configurable.
-      [(h hp heap)
+      ;; Display part of memory.
+      [(m mem memory)
        (match xs
-         [(cons (? positive-integer? n) _)
-          (displayln (format-memory 'rbx (* -1 n)))]
-         [_
-          (displayln (format-memory 'rbx -4))])]
+         [(cons base xs)
+          (unless (or (register? base)
+                      (address? base))
+            (abort (displayln "base argument to 'show ~a' must be a register or address; got ~a" x base)))
+          (match xs
+            ['()
+             (displayln (format-memory base -4))]
+            [(list (and (? exact-integer? n)
+                        (not (? zero?))))
+             (displayln (format-memory base n))]
+            [(list (? number? n))
+             (abort (displayln "numerical argument to 'show ~a ~a' must be a positive or negative integer; got ~a" x base n))]
+            [v
+             (abort (displayln "unknown 'show ~a ~a' argument: ~a" x base v))])])]
       ;; Display flag(s).
       [(f fs flag flags)
        (displayln
@@ -147,7 +155,7 @@
                ;; TODO: debug why ~r is also printing the name of the register.
                ;; I think [expand]ing the [define-format-for-show] macro used
                ;; for [format/repl] will help here
-               (λ (r) (format/repl "~a: ~r foo" r r))
+               (λ (r) (format/repl "~a: ~r" r r))
                (λ (r)
                  (if (register? r)
                      r
