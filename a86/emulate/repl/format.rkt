@@ -208,7 +208,7 @@
            (~a "0x"
                (~r mv
                    #:base 16
-                   #:min-width 16
+                   #:min-width (- (current-memory-value-width) 2)
                    #:pad-string "0")
                #:width (current-memory-value-width)
                #:align 'right)
@@ -311,41 +311,72 @@
 ;; Returns a string formatting values in memory with their addresses, where the
 ;; high addresses are displayed at the top, and each word is visually divided
 ;; with borders.
-(define (format-memory base n)
+;;
+;; A positive [n] indicates that the [base] address is the lowest address, while
+;; a negative [n] indicates that the [base] address is the greatest address.
+(define (format-memory base n [direction (if (positive? n) 'up 'down)])
   (unless (not (zero? n))
     (raise-argument-error 'format-memory "non-zero integer?" n))
-  (let*-values ([(base-address) (match base
-                                  [(? register?) (current-repl-register-ref base)]
-                                  [(? address?)  base])]
-                [(as+vses max-string-length max-address-length)
+  (let*-values ([(n) (abs n)]
+                [(base-address label)
+                 (match base
+                   [(? register?) (values (current-repl-register-ref base)
+                                          (~a base))]
+                   [(? address?)  (values base
+                                          #f)])]
+                [(as+vses max-v-str-length max-address-length)
                  (for/fold ([as+vses            '()]
-                            [max-string-length    0]
+                            [max-v-str-length     0]
                             [max-address-length   0])
-                           ([i (in-range (abs n))]
-                            ;; We want the high addresses to appear first, so if
-                            ;; [n] is positive we start with the greatest
-                            ;; offset, and if [n] is negative we start with the
-                            ;; zero offset.
-                            #:do [(define a (if (positive? n)
-                                                (+ base-address (*  8 (- n (add1 i))))
-                                                (+ base-address (* -8 i))))]
+                           ([i (in-range n)]
+                            ;; We want the high addresses to appear at the top,
+                            ;; but we're constructing the list backwards, so if
+                            ;; we're counting ['up] from the [base-address] then
+                            ;; we start with the zero offset and work up, and if
+                            ;; we're counting ['down] from the [base-address]
+                            ;; then we start with the greatest offset and work
+                            ;; down.
+                            #:do [(define a (+ base-address
+                                               (match direction
+                                                 ['up   (* 8 i)]
+                                                 ['down (* -8 (- n (add1 i)))])))]
                             #:when (current-repl-address-readable? a))
-                   (let ([vs (format/repl "~m" a)]
-                         [as (~r a #:base 16)])
-                     (values (cons (cons as vs) as+vses)
-                             (max max-string-length  (string-length vs))
-                             (max max-address-length (string-length as)))))]
-                [(divider) (format "+~a+" (make-string (+ 2 max-string-length) #\-))])
-    #f
+                   ;; For formatting these boxes, we first format the values in
+                   ;; hex, then compare their lengths, and then generate strings
+                   ;; for all of them of similar lengths. This makes comparison
+                   ;; and printing nice without including more leading zeroes
+                   ;; than necessary.
+                   (let* ([v (current-repl-memory-ref a)]
+                          [v-str (if (a86-value? v)
+                                     (~r v #:base 16)
+                                     #f)]
+                          [a-str (~r a #:base 16)])
+                     (values (cons (cons (if (and label (= a base-address))
+                                             (~a a-str "  [" label "]")
+                                             a-str)
+                                         v-str)
+                                   as+vses)
+                             (max max-v-str-length  (or (and (string? v-str)
+                                                              (string-length v-str))
+                                                         0))
+                             (max max-address-length (string-length a-str)))))]
+                ;; Divider is 4 longer than the maximum length of a value string
+                ;; because each value will be prefixed with "0x" and surrounded
+                ;; by one space on each side.
+                [(divider) (format "+~a+" (make-string (+ 4 max-v-str-length) #\-))])
     (string-join (cons divider
                        (map (match-lambda
-                              [(cons as vs)
+                              [(cons a-str v-str)
                                (format "\n| ~a |\n~a  0x~a"
-                                       (~a vs
-                                           #:width max-string-length
-                                           #:align 'right)
+                                       (if v-str
+                                           (~a "0x"
+                                               (~a v-str
+                                                   #:pad-string "0"
+                                                   #:width max-v-str-length
+                                                   #:align 'right))
+                                           (make-string (+ 2 max-v-str-length) #\X))
                                        divider
-                                       (~a as
+                                       (~a a-str
                                            #:width max-address-length
                                            #:pad-string "0"
                                            #:align 'right))])
