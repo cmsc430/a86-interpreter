@@ -56,7 +56,11 @@
          emulator-memory-ref
          emulator-memory-ref/32
          emulator-memory-ref/16
-         emulator-memory-ref/8)
+         emulator-memory-ref/8
+         emulator-memory-ref*
+         emulator-memory-ref*/32
+         emulator-memory-ref*/16
+         emulator-memory-ref*/8)
 
 (require "../debug.rkt"
          "../exn.rkt"
@@ -245,3 +249,21 @@
 (define-emulator-memory-ref emulator-memory-ref/32 4)
 (define-emulator-memory-ref emulator-memory-ref/16 2)
 (define-emulator-memory-ref emulator-memory-ref/8  1)
+
+(define-syntax (define-emulator-memory-ref* stx)
+  (syntax-parse stx
+    [(_ name:id byte-count:integer)
+     #'(define name
+         (case-lambda
+           [(address n)
+            (name (current-emulator) #f address n)]
+           [(emulator address n)
+            (name emulator #f address n)]
+           [(emulator step address n)
+            (let ([tick (StepState-time-tick (emulator-state emulator step))])
+              (memory-ref* (Emulator-memory emulator) address n tick byte-count))]))]))
+
+(define-emulator-memory-ref* emulator-memory-ref*    8)
+(define-emulator-memory-ref* emulator-memory-ref*/32 4)
+(define-emulator-memory-ref* emulator-memory-ref*/16 2)
+(define-emulator-memory-ref* emulator-memory-ref*/8  1)

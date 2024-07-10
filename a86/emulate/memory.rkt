@@ -21,6 +21,7 @@
          address-writable?
          (rename-out [Memory-address->name address-section-name])
          memory-ref
+         memory-ref*
          memory-set!
          heap-allocate-space!
          heap-free-space!
@@ -342,6 +343,23 @@
                     [value0 (arithmetic-shift masked0 (* -8 byte-offset))]
                     [value1 (arithmetic-shift masked1 (*  8 count0))])
                (bitwise-ior value0 value1))])))))
+
+;; Given a [Memory?], address, and number of values to read, returns an
+;; association list of length [n] mapping addresses to values. If the memory at
+;; any address is unreadable, its value will be ['unreadable].
+;;
+;; NOTE: The number [n] also indicates the direction in which the addresses must
+;; be built: a positive value indicates that [base-address] is the least among
+;; all addresses to read from, while a negative value does the opposite.
+(define (memory-ref* memory base-address n [tick #f] [byte-count word-size-bytes])
+  (for/list ([i (if (negative? n)
+                    (in-range 0 n -1)
+                    #;(in-range (add1 n) 1)
+                    (in-range n))]
+             #:do [(define addr (+ base-address (* i byte-count)))])
+    (if (address-readable? memory addr)
+        (list addr (memory-ref memory addr tick byte-count))
+        (list addr 'unreadable))))
 
 ;; Given a [Memory?], address, time tick, and value, attempts to set the memory
 ;; accordingly. Raises an error if the address cannot be accessed, or if the
