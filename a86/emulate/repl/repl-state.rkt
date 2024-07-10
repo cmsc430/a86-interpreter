@@ -24,6 +24,7 @@
          current-repl-flag-ref
          current-repl-register-ref
          current-repl-memory-ref
+         current-repl-memory-ref*
          current-repl-instruction
          current-repl-flag-transactions
          current-repl-register-transactions
@@ -37,6 +38,7 @@
          previous-repl-flag-ref
          previous-repl-register-ref
          previous-repl-memory-ref
+         previous-repl-memory-ref*
          previous-repl-instruction
          previous-repl-flag-transactions
          previous-repl-register-transactions
@@ -146,6 +148,9 @@
 (define (current-repl-memory-ref address)
   (emulator-memory-ref (current-repl-emulator) address))
 
+(define (current-repl-memory-ref* address n)
+  (emulator-memory-ref* (current-repl-emulator) address n))
+
 (define (current-repl-instruction)
   (current-repl-memory-ref (current-repl-instruction-pointer)))
 
@@ -186,6 +191,9 @@
 
 (define (previous-repl-memory-ref address)
   (emulator-memory-ref (current-repl-emulator) -1 address))
+
+(define (previous-repl-memory-ref* address n)
+  (emulator-memory-ref* (current-repl-emulator) -1 address n))
 
 (define (previous-repl-instruction)
   (previous-repl-memory-ref (previous-repl-instruction-pointer)))

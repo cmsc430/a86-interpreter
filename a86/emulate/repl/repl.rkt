@@ -99,6 +99,13 @@
 (define (show-dispatch x xs)
   (let/ec abort
     (case x
+      ;; Display the current instructions.
+      [(i is instructions)
+       (match xs
+         [(list (? exact-integer? n))
+          (displayln (format-instructions n))]
+         [_
+          (displayln (format-instructions 11))])]
       ;; Display part of the stack.
       ;;
       ;; NOTE: We assume [rsp] holds the stack pointer.

@@ -17,9 +17,11 @@
 
          define-show
 
-         format-memory)
+         format-memory
+         format-instructions)
 
-(require "../../registers.rkt"
+(require "../../instructions.rkt"
+         "../../registers.rkt"
          "../../utility.rkt"
          "exn.rkt"
          "repl-state.rkt"
@@ -382,3 +384,92 @@
                                            #:align 'right))])
                             as+vses))
                  "")))
+
+;; Get [n] instructions starting at [base-address].
+(define (retrieve-instructions base-address n)
+  (filter (compose1 instruction? second)
+          (current-repl-memory-ref* base-address n)))
+
+;; Returns a string formatting the current instruction and its context, and
+;; optionally also showing the previous instruction and its context (if
+;; available).
+(define (format-instructions n-lines
+                             [show-prev? #t]
+                             [max-width  30]
+                             [prev-indicator "[p]"]
+                             [curr-indicator "[c]"])
+  (let* ([prev-instr-ptr (and show-prev?
+                              (previous-repl-instruction-pointer))]
+         [curr-instr-ptr (current-repl-instruction-pointer)]
+         ;; If the previous instruction is requested and available, it may be
+         ;; split from the current instruction if there is enough difference
+         ;; between them in memory. If a split results, the previous section
+         ;; receives half of the available lines rounded down less one. The
+         ;; extra line is used for marking a division between the previous and
+         ;; current instruction sections.
+         ;;
+         ;; If the lines are not split, [line-split] will be [#f]. Otherwise, it
+         ;; represents the number of lines devoted to the previous section, as
+         ;; well as the 0-indexed number of the line on which the divider will
+         ;; be drawn.
+         [line-split (and prev-instr-ptr
+                          (>= (abs (- curr-instr-ptr prev-instr-ptr))
+                              n-lines)
+                          (let-values ([(q r) (quotient/remainder n-lines 2)])
+                            (- q (if (zero? r) 1 0))))]
+         [prev-instrs (and prev-instr-ptr
+                           line-split
+                           ;; Get [line-split - 2] lines before the previous
+                           ;; instruction, the previous instruction, and the
+                           ;; next instruction after that.
+                           (retrieve-instructions (word-aligned-offset prev-instr-ptr (- line-split 2))
+                                                  (- line-split)))]
+         [curr-instrs
+          ;; We determine the offset of the [curr-instr-ptr] within the lines.
+          ;; This depends on whether there is a [prev-instr-ptr] and
+          ;; [prev-instrs].
+          (if prev-instr-ptr
+              (if prev-instrs
+                  ;; There's a complete separation, so we try to put one
+                  ;; instruction first (if possible), then the [prev-instr-ptr],
+                  ;; then the remaining instructions to fill the lines.
+                  (let* ([curr-lines (- n-lines line-split)]
+                         [offset (if (>= curr-lines 2) 1 0)])
+                    (retrieve-instructions (word-aligned-offset curr-instr-ptr offset)
+                                           (- curr-lines)))
+                  ;; The [prev-instr-ptr] is too close to the [curr-instr-ptr],
+                  ;; so we try to put one instruction first (if possible), then
+                  ;; the [prev-instr-ptr], then as many instructions as needed,
+                  ;; then the [curr-instr-ptr], then the remaining instructions
+                  ;; to fill the lines.
+                  (let* ([first-ptr  (max prev-instr-ptr curr-instr-ptr)]
+                         [second-ptr (min prev-instr-ptr curr-instr-ptr)]
+                         [line-span  (add1 (/ (- first-ptr second-ptr) 8))]
+                         [offset (if (> (- n-lines line-span) 2) 1 0)])
+                    (retrieve-instructions (word-aligned-offset first-ptr offset)
+                                           (- line-span))))
+              ;; The [curr-instr-ptr] is at the top and the rest of the lines
+              ;; are filled with the next instructions.
+              (retrieve-instructions curr-instr-ptr (- n-lines)))])
+    (let* ([indicator-length (max (string-length (or prev-indicator 0))
+                                  (string-length (or curr-indicator 0)))]
+           [format-a+i (match-lambda
+                         [(? string? s) s]
+                         [(list a i)
+                          (format "~a~a~a"
+                                  (~a (cond [(equal? a prev-instr-ptr) (or prev-indicator "")]
+                                            [(equal? a curr-instr-ptr) (or curr-indicator "")]
+                                            [else                      ""])
+                                      #:width indicator-length
+                                      #:align 'right)
+                                  (if (zero? indicator-length) "" " ")
+                                  (~v i
+                                      #:max-width (- max-width indicator-length)
+                                      #:limit-marker "...)"))])])
+      (string-join (map format-a+i
+                        (if prev-instrs
+                            (append prev-instrs
+                                    (list (make-string max-width #\-))
+                                    curr-instrs)
+                            curr-instrs))
+                   "\n"))))
