@@ -3,6 +3,7 @@
 (provide format/repl
 
          current-memory-value-width
+         current-instruction-display-count
 
          current-escape-formatter/~f
          current-escape-formatter/~r
@@ -143,6 +144,7 @@
                  format-func-name)))))]))
 
 (define current-memory-value-width (make-parameter 18))
+(define current-instruction-display-count (make-parameter 11))
 
 ;; Formats a string similar to [format], but with custom format escapes for the
 ;; a86 REPL.

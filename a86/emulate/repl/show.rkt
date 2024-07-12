@@ -1,7 +1,8 @@
 #lang racket
 
 (provide show/simple
-         show/compact)
+         show/compact
+         show/complete)
 
 (require "format.rkt"
          "repl-state.rkt")
@@ -100,5 +101,73 @@
   [(positive-integer? (file-position* (current-repl-input-port)))
    "pos:     ~<<^"])
 
-;; FIXME -----------------------------------------------------------------------
-#;(format/repl "overflow? ~f\nrax: ~r\nlast instruction: ~I" 'OF 'rax)
+(define (map-pad proc def0 lst0 . args)
+  (let loop ([defs (list def0)]
+             [lsts (list lst0)]
+             [args args])
+    (match args
+      ;; Take the next default value and list, then loop.
+      [(list* defn lstn args)
+       (loop (cons defn defs)
+             (cons lstn lsts)
+             args)]
+      ;; Done accumulating default values and lists of arguments. Map time!
+      [(list)
+       (let ([defs (reverse defs)]
+             [lsts (reverse lsts)])
+         (if (andmap null? lsts)
+             '()
+             (let loop ([ress '()]
+                        [lsts lsts])
+               (if (ormap values lsts)
+                   ;; At least one of the lists still has elements.
+                   (for/fold ([args     '()]
+                              [new-lsts '()]
+                              #:result (loop (cons (apply proc (reverse args))
+                                                   ress)
+                                             (reverse new-lsts)))
+                             ([def defs]
+                              [lst lsts])
+                     (match lst
+                       [#f           (values (cons def args) (cons #f  new-lsts))]
+                       [(cons v '()) (values (cons v   args) (cons #f  new-lsts))]
+                       [(cons v lst) (values (cons v   args) (cons lst new-lsts))]))
+                   ;; No list has elements; conclude iteration.
+                   (reverse ress)))))]
+      ;; Inconsistent number of arguments.
+      [_ (error 'map-pad "expected equal number of default arguments and list arguments")])))
+
+(define (show/complete)
+  (let* ([is-str (format-instructions (current-instruction-display-count))]
+         [is-lines (string-split is-str "\n")]
+         [max-is-line-len (apply max (map string-length is-lines))]
+         [st-str (format-memory 'rsp (quotient (current-instruction-display-count) 2))]
+         [st-lines (string-split st-str "\n")]
+         ;; TODO: It'd be nice to generalize this and make it more configurable.
+         #;[max-st-line-len (apply max (map string-length st-lines))]
+         [merged-lines
+          (map-pad (λ (is-line st-line)
+                     (string-append (~a is-line #:width max-is-line-len)
+                                    "  "
+                                    (~a st-line)))
+                   ""
+                   is-lines
+                   ""
+                   st-lines)])
+    (displayln
+     (string-join
+      (append merged-lines
+              (list ""
+                    (format/repl "Step: ~q")
+                    (format/repl "Flags: ~f*"))
+              (if (positive-integer? (file-position* (current-repl-output-port)))
+                  (list (format/repl "Output: \"~>>\""))
+                  (list))
+              (if (current-repl-input-port)
+                  (list (format/repl "Input:  \"~<<<\""))
+                  (list))
+              (if (positive-integer? (file-position* (current-repl-input-port)))
+                  (list (format/repl "         ~<<^"))
+                  (list))
+              (list ""))
+      "\n"))))

@@ -37,11 +37,12 @@
                        (input-string str)]
    [("-m" "--mode")    mode
                        ("The initial 'show' mode; one of:"
-                        "  simple  --- the essentials in a single line"
-                        "  compact --- a few lines of useful info")
+                        "  simple   --- the essentials in a single line"
+                        "  compact  --- a few lines of useful info"
+                        "  complete --- a lot of information")
                        (let ([mode (string->symbol mode)])
                          (case mode
-                           [(simple compact)
+                           [(simple compact complete)
                             (show-mode mode)]
                            [else (raise-user-error "not a valid mode: ~a" mode)]))]
    [("-r" "--runtime") rt
@@ -89,6 +90,8 @@
         (show/simple)]
        [(compact)
         (show/compact)]
+       [(complete)
+        (show/complete)]
        [(#f)
         (displayln "no 'show' mode set")]
        [else
