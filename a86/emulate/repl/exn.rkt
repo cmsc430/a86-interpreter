@@ -5,7 +5,8 @@
 (provide exn:fail:contract:bad-format?
          exn:fail:contract:bad-format-expected-args)
 
-(define-a86-exn/provide user:repl ())
+(define-a86-exn/provide user:repl ()
+  #:parent-name exn:fail:a86:user)
 (define-a86-exn/provide user:repl:bad-command (name args)
   #:parent-name exn:fail:a86:user:repl)
 (define-a86-exn/provide user:repl:format ()

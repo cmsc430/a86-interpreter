@@ -258,6 +258,8 @@
                          [show-mode     'simple]
                          [catch-errors? #t])
   (let ([instructions (and input-file
+                           (or (file-exists? input-file)
+                               (raise-a86-user-repl-error 'repl "input file does not exist: ~a" input-file))
                            (read-instructions-from-file input-file))]
         [in  (open-input-string (or input-string ""))]
         [out (open-output-string)])
