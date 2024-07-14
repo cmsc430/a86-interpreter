@@ -34,6 +34,12 @@
           [runtime-name?               (-> symbol? boolean?)]
           [name->runtime               (-> symbol? runtime?)]
           ;; Predefined runtimes.
+          [default-runtime             runtime?]
+          [abscond                     runtime?]
+          [blackmail                   runtime?]
+          [con                         runtime?]
+          [dupe                        runtime?]
+          [dodger                      runtime?]
           [evildoer                    runtime?]
           [extort                      runtime?]
           [fraud                       runtime?]
@@ -63,10 +69,13 @@
 ;; list, i.e., the first argument should be passed in ['rdi] and so on.
 (define argument-registers '(rdi rsi rdx rcx r8 r9))
 
+;; The default runtime has nothing defined.
+(define default-runtime (runtime (hash)))
+
 ;; The current runtime, represented as a hash mapping function names to Racket
 ;; functions. The functions are expected to have been converted via
 ;; [convert-runtime-function].
-(define current-runtime (make-parameter (runtime (hash))))
+(define current-runtime (make-parameter default-runtime))
 
 ;; I/O is handled through dedicated ports.
 (define current-runtime-input-port  (make-parameter #f))
@@ -279,9 +288,12 @@
 #;(define-runtime libc
   ([(malloc size) ()]))
 
+;; The base runtimes are just the default runtime with different names.
+(define-runtimes (abscond blackmail con dupe dodger) #:extending default-runtime ())
 
 ;; The various runtimes are defined below.
 (define-runtime evildoer
+  #:extending dodger
   ([(read_byte)    (guarded-read-byte)]
    [(peek_byte)    (guarded-peek-byte)]
    [(write_byte b) (guarded-write-byte b)]))

@@ -53,7 +53,7 @@
    #:args ()
    (initialize-repl (input-file)
                     (input-string)
-                    (runtime)
+                    (or (runtime) default-runtime)
                     (show-mode)
                     (catch-errors?))))
 
@@ -254,7 +254,7 @@
 
 (define (initialize-repl [input-file    #f]
                          [input-string  #f]
-                         [runtime       #f]
+                         [runtime       default-runtime]
                          [show-mode     'simple]
                          [catch-errors? #t])
   (let ([instructions (and input-file

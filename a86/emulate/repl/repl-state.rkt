@@ -51,6 +51,7 @@
 (require "../../exn.rkt"
          "../emulator.rkt"
          "../memory.rkt"
+         "../runtime.rkt"
          "../state.rkt"
          (submod "../emulator.rkt" private)
 
@@ -65,7 +66,7 @@
 
 (define (make-repl-state emulator
                          [show-mode   'simple]
-                         [runtime     #f]
+                         [runtime     default-runtime]
                          [input-port  #f]
                          [output-port #f])
   (repl-state emulator show-mode runtime input-port output-port))
