@@ -2,6 +2,7 @@
 
 (provide (struct-out StepState)
          end-of-program-signal
+         max-step-count
          step/manual)
 
 (require "../ast.rkt"
@@ -176,6 +177,9 @@
 ;; execution will halt.
 (define end-of-program-signal 'end)
 
+;; The maximum number of steps.
+(define max-step-count (make-parameter 10000))
+
 ;; Executes a single step in the interpreter, producing a new [StepState?].
 ;;
 ;; The interpreter works by reading the next instruction from memory according
@@ -185,6 +189,8 @@
 (define (step/manual step-state memory labels->addresses)
   (match step-state
     [(StepState time-tick ip flags registers _ _ _)
+     (when (>= (sub1 time-tick) (max-step-count))
+       (raise-a86-emulator-out-of-steps-error 'step/manual "Out of steps!"))
      (let* ([current-instruction (original-memory-ref memory ip)]
             [_ (debug "step ~a: ~v\t[~a]" time-tick current-instruction (format-word ip 'hex))]
             ;; Transactions of the flags, registers, and memory are tracked

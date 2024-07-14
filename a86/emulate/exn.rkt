@@ -7,4 +7,8 @@
 (define-a86-exn/provide emulator:segfault ()
   #:parent-name exn:fail:a86:emulator)
 
-(define-a86-exn/provide emulator:resume ())
+(define-a86-exn/provide emulator:resume ()
+  #:parent-name exn:fail:a86:emulator)
+
+(define-a86-exn/provide emulator:out-of-steps ()
+  #:parent-name exn:fail:a86:emulator)

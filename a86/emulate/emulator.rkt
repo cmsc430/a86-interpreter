@@ -46,7 +46,6 @@
          initialize-emulator
          emulator?
          emulator-step!
-         emulator-step-count
          emulator-multi-step!
          emulator-step-back!
          emulator->flags
@@ -60,7 +59,9 @@
          emulator-memory-ref*
          emulator-memory-ref*/32
          emulator-memory-ref*/16
-         emulator-memory-ref*/8)
+         emulator-memory-ref*/8
+
+         (rename-out [max-step-count emulator-step-count]))
 
 (require "../debug.rkt"
          "../exn.rkt"
@@ -176,9 +177,8 @@
            (vector-set! states new-index new-state)))
        (set-Emulator-current-index! emulator new-index))]))
 
-;; The maximum number of steps can be parameterized.
-(define emulator-step-count (make-parameter 10000))
-
+;; Steps the emulator until either the new state is identical to the old state
+;; or [exn:fail:a86:emulator:out-of-steps] is raised, then returns politely.
 (define (emulator-multi-step! [emulator (current-emulator)])
   (debug "labels->addresses:")
   (for ([(label address) (in-hash (Emulator-labels->addresses emulator))])
@@ -187,17 +187,14 @@
   (debug-memory-section (Emulator-memory emulator) text)
   (debug "")
   (parameterize ([trace-registers (list 'rax 'rsp)])
-    (let recurse ([steps (emulator-step-count)]
-                  [last-state (emulator-state emulator)])
-      (when (not (zero? steps))
-        (debug-memory-section (Emulator-memory emulator) stack)
-        (debug-flags (emulator->flags emulator))
-        (debug-registers (emulator->registers emulator))
-        (emulator-step! emulator)
-        (let ([new-state (emulator-state emulator)])
-          (unless (eq? new-state last-state)
-            (recurse (sub1 steps)
-                     new-state)))))
+    (let recurse ([last-state (emulator-state emulator)])
+      (debug-memory-section (Emulator-memory emulator) stack)
+      (debug-flags (emulator->flags emulator))
+      (debug-registers (emulator->registers emulator))
+      (emulator-step! emulator)
+      (let ([new-state (emulator-state emulator)])
+        (unless (eq? new-state last-state)
+          (recurse new-state))))
     (debug "\n\n")))
 
 ;; NOTE: Cannot step backwards past the first state.
