@@ -4,6 +4,7 @@
 
          current-memory-value-width
          current-instruction-display-count
+         current-instruction-display-width
 
          current-escape-formatter/~f
          current-escape-formatter/~r
@@ -143,8 +144,9 @@
                                                    part)])))
                  format-func-name)))))]))
 
-(define current-memory-value-width (make-parameter 18))
+(define current-memory-value-width        (make-parameter 18))
 (define current-instruction-display-count (make-parameter 11))
+(define current-instruction-display-width (make-parameter 30))
 
 ;; Formats a string similar to [format], but with custom format escapes for the
 ;; a86 REPL.
@@ -391,8 +393,8 @@
 ;; optionally also showing the previous instruction and its context (if
 ;; available).
 (define (format-instructions n-lines
-                             [show-prev?        #t]
-                             [max-width         30]
+                             [show-prev?     #t]
+                             [max-width      (current-instruction-display-width)]
                              [prev-indicator "[p]"]
                              [curr-indicator "[c]"])
 
@@ -591,7 +593,8 @@
                      (select-instructions/current n-lines))]
          [indicator-width (max (string-length (or prev-indicator 0))
                                (string-length (or curr-indicator 0)))]
-         [instruction-width (- max-width indicator-width)]
+         [gutter-width (if (zero? indicator-width) 0 1)]
+         [instruction-width (- max-width indicator-width gutter-width)]
          [format-i (λ (i) (~v i
                               #:max-width instruction-width
                               #:limit-marker "...)"))]
@@ -610,7 +613,7 @@
                        [(? instruction? i)
                         (format "~a~a"
                                 (make-string (+ indicator-width
-                                                (if indicator-width 1 0))
+                                                gutter-width)
                                              #\space)
                                 (format-i i))]
                        [v (error 'format-instructions "Unknown value: ~v" v)])])

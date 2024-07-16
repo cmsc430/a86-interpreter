@@ -140,7 +140,8 @@
 (define (show/complete)
   (let* ([is-str (format-instructions (current-instruction-display-count))]
          [is-lines (string-split is-str "\n")]
-         [max-is-line-len (apply max (map string-length is-lines))]
+         #;[max-is-line-len (apply max (map string-length is-lines))]
+         [max-is-line-len (current-instruction-display-width)]
          [st-str (format-memory 'rsp (quotient (current-instruction-display-count) 2))]
          [st-lines (string-split st-str "\n")]
          ;; TODO: It'd be nice to generalize this and make it more configurable.
