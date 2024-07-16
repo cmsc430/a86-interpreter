@@ -387,91 +387,232 @@
                             as+vses))
                  "")))
 
-;; Get [n] instructions starting at [base-address].
-(define (retrieve-instructions base-address n)
-  (filter (compose1 instruction? second)
-          (current-repl-memory-ref* base-address n)))
-
 ;; Returns a string formatting the current instruction and its context, and
 ;; optionally also showing the previous instruction and its context (if
 ;; available).
 (define (format-instructions n-lines
-                             [show-prev? #t]
-                             [max-width  30]
+                             [show-prev?        #t]
+                             [max-width         30]
                              [prev-indicator "[p]"]
                              [curr-indicator "[c]"])
-  (let* ([prev-instr-ptr (and show-prev?
-                              (previous-repl-instruction-pointer))]
-         [curr-instr-ptr (current-repl-instruction-pointer)]
-         ;; If the previous instruction is requested and available, it may be
-         ;; split from the current instruction if there is enough difference
-         ;; between them in memory. If a split results, the previous section
-         ;; receives half of the available lines rounded down less one. The
-         ;; extra line is used for marking a division between the previous and
-         ;; current instruction sections.
-         ;;
-         ;; If the lines are not split, [line-split] will be [#f]. Otherwise, it
-         ;; represents the number of lines devoted to the previous section, as
-         ;; well as the 0-indexed number of the line on which the divider will
-         ;; be drawn.
-         [line-split (and prev-instr-ptr
-                          (>= (abs (- curr-instr-ptr prev-instr-ptr))
-                              n-lines)
-                          (let-values ([(q r) (quotient/remainder n-lines 2)])
-                            (- q (if (zero? r) 1 0))))]
-         [prev-instrs (and prev-instr-ptr
-                           line-split
-                           ;; Get [line-split - 2] lines before the previous
-                           ;; instruction, the previous instruction, and the
-                           ;; next instruction after that.
-                           (retrieve-instructions (word-aligned-offset prev-instr-ptr (- line-split 2))
-                                                  (- line-split)))]
-         [curr-instrs
-          ;; We determine the offset of the [curr-instr-ptr] within the lines.
-          ;; This depends on whether there is a [prev-instr-ptr] and
-          ;; [prev-instrs].
-          (if prev-instr-ptr
-              (if prev-instrs
-                  ;; There's a complete separation, so we try to put one
-                  ;; instruction first (if possible), then the [prev-instr-ptr],
-                  ;; then the remaining instructions to fill the lines.
-                  (let* ([curr-lines (- n-lines line-split)]
-                         [offset (if (>= curr-lines 2) 1 0)])
-                    (retrieve-instructions (word-aligned-offset curr-instr-ptr offset)
-                                           (- curr-lines)))
-                  ;; The [prev-instr-ptr] is too close to the [curr-instr-ptr],
-                  ;; so we try to put one instruction first (if possible), then
-                  ;; the [prev-instr-ptr], then as many instructions as needed,
-                  ;; then the [curr-instr-ptr], then the remaining instructions
-                  ;; to fill the lines.
-                  (let* ([first-ptr  (max prev-instr-ptr curr-instr-ptr)]
-                         [second-ptr (min prev-instr-ptr curr-instr-ptr)]
-                         [line-span  (add1 (/ (- first-ptr second-ptr) 8))]
-                         [offset (if (> (- n-lines line-span) 2) 1 0)])
-                    (retrieve-instructions (word-aligned-offset first-ptr offset)
-                                           (- line-span))))
-              ;; The [curr-instr-ptr] is at the top and the rest of the lines
-              ;; are filled with the next instructions.
-              (retrieve-instructions curr-instr-ptr (- n-lines)))])
-    (let* ([indicator-length (max (string-length (or prev-indicator 0))
-                                  (string-length (or curr-indicator 0)))]
-           [format-a+i (match-lambda
-                         [(? string? s) s]
-                         [(list a i)
+
+  ;; Returns an association list mapping addresses to the instructions located
+  ;; at those addresses.
+  ;;
+  ;; An attempt is made to center the instructions around the base address.
+  ;; However, if insufficiently many instructions are available, the window is
+  ;; shifted. If there are simply not enough instructions available, even with a
+  ;; shift, then the necessary quantity of [#f] values are inserted to provide
+  ;; the best centering possible.
+  ;;
+  ;; If [include-address] is given, the window will center between
+  ;; [base-address] and [include-address] until the latter is within the window,
+  ;; and then the window will expand centered on [base-address].
+  ;;
+  ;; NOTE: It is assumed that [include-address] is not the same as
+  ;; [base-address], is within the natural maximum window range, and refers to a
+  ;; readable word in memory that contains an instruction. If any of these
+  ;; criteria is not met, [include-address] is treated as though it were [#f].
+  (define (retrieve-instructions/centering base-address n
+                                           #:base-label    [base-label      'base]
+                                           #:including     [include-address #f]
+                                           #:include-label [include-label   'include])
+    (unless (positive-integer? n)
+      (error 'retrieve-instructions/centering "Invalid desired window size: ~v" n))
+
+    ;; Ensure the [include-address] refers to a real instruction-containing
+    ;; address within the bounds of our possible window.
+    (set! include-address (and include-address
+                               (not (= include-address base-address))
+                               (or (<= include-address (word-aligned-offset base-address    n))
+                                   (>= include-address (word-aligned-offset base-address (- n))))
+                               (current-repl-address-readable? include-address)
+                               (instruction? (current-repl-memory-ref include-address))
+                               include-address))
+    ;; Build an association list of address-instruction pairs.
+    (let loop ([window-hi-addr     base-address]
+               [window-lo-addr     base-address]
+               [window-width       1]
+               [hi-offset          0]  ;; Offsets are set to [#f] if we can
+               [lo-offset          0]  ;; no longer expand in that direction.
+               [upper-values       '()]
+               [lower-values       '()]
+               [include-in-window? #f]
+               [include-upwards?   (and include-address (> include-address base-address))])
+      ;; Is our window done expanding?
+      (if (>= window-width n)
+          ;; Yes; return the address-instruction pairs. Recall that the
+          ;; [upper-values] and [lower-values] are built from the inside out, so
+          ;; we reverse the [lower-values] to go from greatest address to least.
+          (append upper-values
+                  (list (list base-label (current-repl-memory-ref base-address)))
+                  (reverse lower-values))
+          ;; No; we must expand.
+          (let* ([next-hi-offset (and hi-offset (add1 hi-offset))]
+                 [next-lo-offset (and lo-offset (sub1 lo-offset))]
+                 [next-hi-addr   (and next-hi-offset (word-aligned-offset base-address next-hi-offset))]
+                 [next-lo-addr   (and next-lo-offset (word-aligned-offset base-address next-lo-offset))]
+                 [new-hi-addr?   (and next-hi-addr (current-repl-address-readable? next-hi-addr))]
+                 [new-lo-addr?   (and next-lo-addr (current-repl-address-readable? next-lo-addr))]
+                 [new-hi-value   (and new-hi-addr? (current-repl-memory-ref next-hi-addr))]
+                 [new-lo-value   (and new-lo-addr? (current-repl-memory-ref next-lo-addr))]
+                 [new-hi-addr?   (instruction? new-hi-value)]
+                 [new-lo-addr?   (instruction? new-lo-value)])
+            ;; Do we need to keep looking for the [include-address]?
+            (if (and include-address (not include-in-window?))
+                ;; Yes. Should we be looking upwards?
+                (if include-upwards?
+                    ;; Yes; take a step that way. NOTE: Safe to assume progress.
+                    (let ([include-found? (<= include-address next-hi-addr)])
+                      (loop next-hi-addr
+                            window-lo-addr
+                            (add1 window-width)
+                            next-hi-offset
+                            lo-offset
+                            (cons (if include-found?
+                                      (list include-label new-hi-value)
+                                      new-hi-value)
+                                  upper-values)
+                            lower-values
+                            include-found?
+                            include-upwards?))
+                    ;; No; take a step downwards. NOTE: Safe to assume progress.
+                    (let ([include-found? (>= include-address next-lo-addr)])
+                      (loop window-hi-addr
+                            next-lo-addr
+                            (add1 window-width)
+                            hi-offset
+                            next-lo-offset
+                            upper-values
+                            (cons (if include-found?
+                                      (list include-label new-lo-value)
+                                      new-lo-value)
+                                  lower-values)
+                            include-found?
+                            include-upwards?)))
+                ;; No. Can we take a step upwards?
+                (if new-hi-addr?
+                    ;; Yes. Do we need to take more than one step, and can we
+                    ;; step in both directions?
+                    (if (and (>= (- n window-width) 2)
+                             new-lo-addr?)
+                        ;; Yes; take both steps and continue.
+                        (loop next-hi-addr
+                              next-lo-addr
+                              (+ 2 window-width)
+                              next-hi-offset
+                              next-lo-offset
+                              (cons new-hi-value upper-values)
+                              (cons new-lo-value lower-values)
+                              include-in-window?
+                              include-upwards?)
+                        ;; No; take one step upward and continue.
+                        (loop next-hi-addr
+                              window-lo-addr
+                              (add1 window-width)
+                              next-hi-offset
+                              lo-offset
+                              (cons new-hi-value upper-values)
+                              lower-values
+                              include-in-window?
+                              include-upwards?))
+                    ;; No. Can we take a step downwards?
+                    (if new-lo-addr?
+                        ;; Yes; take the step and continue.
+                        (loop window-hi-addr
+                              next-lo-addr
+                              (add1 window-width)
+                              #f  ;; We cannot expand upwards.
+                              next-lo-offset
+                              upper-values
+                              (cons new-lo-value lower-values)
+                              include-in-window?
+                              include-upwards?)
+                        ;; No; we must stop expanding. We will have to pad our
+                        ;; window with [#f]s appropriately.
+                        (let pad-loop ([upper-values upper-values]
+                                       [lower-values lower-values]
+                                       [window-width window-width])
+                          (cond
+                            [(>= window-width n)
+                             (loop window-hi-addr
+                                   window-lo-addr
+                                   window-width
+                                   hi-offset
+                                   lo-offset
+                                   upper-values
+                                   lower-values
+                                   include-in-window?
+                                   include-upwards?)]
+                            [(> (length upper-values) (length lower-values))
+                             (pad-loop upper-values (cons #f lower-values) (add1 window-width))]
+                            [else
+                             (pad-loop (cons #f upper-values) lower-values (add1 window-width))])))))))))
+
+  ;; Selects instructions that will include both the previous and current
+  ;; instruction. If the gap between these is too wide, a break will appear in
+  ;; the middle denoted by ['break] instead of an address-instruction pair.
+  (define (select-instructions/current-and-previous)
+    (let* ([prev-instr-ptr (previous-repl-instruction-pointer)]
+           [curr-instr-ptr (current-repl-instruction-pointer)]
+           [word-diff (/ (abs (- prev-instr-ptr curr-instr-ptr)) word-size-bytes)])
+      ;; Determine whether we need two separate instruction regions.
+      (if (> word-diff n-lines)
+          ;; Yes, so generate two regions centered on each address.
+          (let* ([prev-n (- (quotient n-lines 2)
+                            (if (odd? n-lines) 0 1))]
+                 [curr-n (quotient n-lines 2)]
+                 [prev-instrs (retrieve-instructions/centering prev-instr-ptr prev-n #:base-label 'prev)]
+                 [curr-instrs (retrieve-instructions/centering curr-instr-ptr curr-n #:base-label 'curr)])
+            (if (> prev-instr-ptr curr-instr-ptr)
+                (append prev-instrs
+                        (list 'break)
+                        curr-instrs)
+                (append curr-instrs
+                        (list 'break)
+                        prev-instrs)))
+          ;; No; center on the current address but include the previous.
+          (retrieve-instructions/centering curr-instr-ptr n-lines
+                                           #:base-label    'curr
+                                           #:including     prev-instr-ptr
+                                           #:include-label 'prev))))
+
+  ;; Selects [n] instructions that will include the current instruction as
+  ;; centered as possible.
+  (define (select-instructions/current n)
+    (let ([curr-instr-ptr (current-repl-instruction-pointer)])
+      (retrieve-instructions/centering curr-instr-ptr n #:base-label 'curr)))
+
+  ;; If we're meant to show the previous instruction AND the previous
+  ;; instruction is actually available, do so. Otherwise, show only the current
+  ;; instruction.
+  (let* ([instrs (if (and show-prev? (previous-repl-instruction-pointer))
+                     (select-instructions/current-and-previous)
+                     (select-instructions/current n-lines))]
+         [indicator-width (max (string-length (or prev-indicator 0))
+                               (string-length (or curr-indicator 0)))]
+         [instruction-width (- max-width indicator-width)]
+         [format-i (λ (i) (~v i
+                              #:max-width instruction-width
+                              #:limit-marker "...)"))]
+         [format-a+i (match-lambda
+                       [(list (and indicator (or 'curr 'prev)) i)
+                        (let ([indicator (match indicator
+                                           ['curr curr-indicator]
+                                           ['prev prev-indicator])])
                           (format "~a~a~a"
-                                  (~a (cond [(equal? a prev-instr-ptr) (or prev-indicator "")]
-                                            [(equal? a curr-instr-ptr) (or curr-indicator "")]
-                                            [else                      ""])
-                                      #:width indicator-length
+                                  (~a (or indicator "")
+                                      #:width indicator-width
                                       #:align 'right)
-                                  (if (zero? indicator-length) "" " ")
-                                  (~v i
-                                      #:max-width (- max-width indicator-length)
-                                      #:limit-marker "...)"))])])
-      (string-join (map format-a+i
-                        (if prev-instrs
-                            (append prev-instrs
-                                    (list (make-string max-width #\-))
-                                    curr-instrs)
-                            curr-instrs))
-                   "\n"))))
+                                  (if (zero? indicator-width) "" " ")
+                                  (format-i i)))]
+                       ['break (make-string max-width #\-)]
+                       [(? instruction? i)
+                        (format "~a~a"
+                                (make-string (+ indicator-width
+                                                (if indicator-width 1 0))
+                                             #\space)
+                                (format-i i))]
+                       [v (error 'format-instructions "Unknown value: ~v" v)])])
+    (string-join (map format-a+i instrs)
+                 "\n")))
