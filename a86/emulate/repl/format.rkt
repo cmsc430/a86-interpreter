@@ -1,10 +1,13 @@
 #lang racket
 
-(provide format/repl
-
-         current-memory-value-width
+(provide current-memory-value-width
+         current-memory-value-hex-display-width
+         current-memory-value-render-display-width
+         current-memory-value-separator
          current-instruction-display-count
          current-instruction-display-width
+
+         format/repl
 
          current-escape-formatter/~f
          current-escape-formatter/~r
@@ -34,6 +37,24 @@
                      racket/string
                      syntax/parse
                      syntax/parse/lib/function-header))
+
+;; The width of memory values displayed via [format/repl].
+(define current-memory-value-width                (make-parameter 18))
+;; The width of the hexadecimal representation of a value in a memory display.
+(define current-memory-value-hex-display-width    (make-parameter 10))
+;; The width of the rendered representation of a value in a memory display. A
+;; value of [#f] suppresses outputting rendered values.
+(define current-memory-value-render-display-width (make-parameter #f))
+;; The string to place between the hexadecimal representation of a value and the
+;; rendered representation of a value in a memory display. However, if the
+;; [current-memory-value-render-display-width] is [#f], this will not be shown.
+(define current-memory-value-separator            (make-parameter "  "))
+;; The width of addresses in a memory display.
+(define current-memory-address-display-width      (make-parameter 10))
+;; The number of instructions to show in an instruction display.
+(define current-instruction-display-count         (make-parameter 11))
+;; The width of instructions (with indicators) in an instruction display.
+(define current-instruction-display-width         (make-parameter 30))
 
 (define-syntax (define-format-for-show stx)
 
@@ -143,10 +164,6 @@
                                                    "could not parse form: ~v"
                                                    part)])))
                  format-func-name)))))]))
-
-(define current-memory-value-width        (make-parameter 18))
-(define current-instruction-display-count (make-parameter 11))
-(define current-instruction-display-width (make-parameter 30))
 
 ;; Formats a string similar to [format], but with custom format escapes for the
 ;; a86 REPL.
@@ -389,167 +406,287 @@
                             as+vses))
                  "")))
 
+;; Retrieves the [number-of-values] around [base-address] values from memory,
+;; attempting to [align] the [base-address] in a particular way. If an
+;; [include-address] is given, then an attempt is made to include that address's
+;; value in the emitted list of values, but if [include-address] lies outside
+;; the valid range it is omitted without warning. Values are omitted if either
+;; [filter-address] returns [#f] when applied to the address or [filter-value]
+;; returns [#f] when subsequently applied to the value. The returned list is
+;; padded with [#f] values according to the [align]ment to ensure a length of
+;; [number-of-values].
+;;
+;; The in-range values in the returned list have one of the following formats:
+;;
+;;   * [value]                        --- A normal value.
+;;   * (list [base-label] [value])    --- The value at [base-address].
+;;   * (list [include-label] [value]) --- The value at [include-address].
+;;
+;; When the list of values is shorter than [number-of-values], it will be padded
+;; according to the [pad-align]. If [pad-align] is ['top], [bottom-pad-value] is
+;; added to the bottom of the range of values, ['bottom] will add
+;; [top-pad-value] to the top of the range of values, and ['center] will attempt
+;; to add padding to both ends to center the [base-address] in the range.
+(define (retrieve-memory-values number-of-values
+                                base-address
+                                #:filter-address   [filter-address   current-repl-address-readable?]
+                                #:filter-value     [filter-value     values]
+                                #:align            [align            'center]
+                                #:base-label       [base-label       'base]
+                                #:including        [include-address  #f]
+                                #:include-label    [include-label    'include]
+                                #:pad-align        [pad-align        'top]
+                                #:pad-value        [pad-value        #f]
+                                #:top-pad-value    [top-pad-value    pad-value]
+                                #:bottom-pad-value [bottom-pad-value pad-value])
+  ;; Check assumptions.
+  (unless (positive-integer? number-of-values)
+    (raise-argument-error 'retrieve-memory-values "positive-integer?" number-of-values))
+  (unless (and (address? base-address)
+               (current-repl-address-readable? base-address))
+    (raise-argument-error 'retrieve-memory-values "readable address?" base-address))
+  (unless (and (procedure? filter-address)
+               (procedure-arity-includes? filter-address 1))
+    (raise-argument-error 'retrieve-memory-values "procedure? with arity including 1" filter-address))
+  (unless (and (procedure? filter-value)
+               (procedure-arity-includes? filter-value 1))
+    (raise-argument-error 'retrieve-memory-values "procedure? with arity including 1" filter-value))
+  (unless (memq align '(center top bottom))
+    (raise-argument-error 'retrieve-memory-values "one of (center, top, bottom)" align))
+
+  ;; Ensure the [include-address] refers to a real instruction-containing
+  ;; address within the bounds of our possible window.
+  (set! include-address (and include-address
+                             (not (= include-address base-address))
+                             (or (<= include-address (word-aligned-offset base-address    number-of-values))
+                                 (>= include-address (word-aligned-offset base-address (- number-of-values))))
+                             (filter-address include-address)
+                             (filter-value (current-repl-memory-ref include-address))
+                             include-address))
+
+  ;; Build the window that includes the [include-address], keeping track of the
+  ;; [balance] "owed" in the process.
+  ;;
+  ;; For example, if [align] is ['bottom] but the [include-address] is three
+  ;; words below the [base-address], the resulting [balance] will be [-3].
+  ;;
+  ;; If there is no [include-address], the balance owed is [0].
+  ;;
+  ;; If [align] is ['top] or ['bottom], a positive balance indicates the
+  ;; [include-address] falls within the natural range of the window, i.e., there
+  ;; is no need to counteract the shift. Meanwhile, a negative balance indicates
+  ;; the window should attempt to scroll back the other direction.
+  ;;
+  ;; If [align] is ['center], the balance is the offset of the [include-address]
+  ;; from the [base-address], where a positive value indicates that the
+  ;; [include-address] is greater than the [base-address] and vice versa. In
+  ;; this case, the window should always attempt to scroll away from the
+  ;; direction of the balance.
+  (let*-values ([(balance) (if include-address
+                               (/ (case align
+                                    [(top)           (- base-address include-address)]
+                                    [(bottom center) (- include-address base-address)])
+                                  word-size-bytes)
+                               0)]
+                [(window-hi-addr window-lo-addr hi-offset lo-offset upper-values lower-values)
+                 (cond
+                   [(or (not include-address)
+                        (= base-address include-address))
+                    (values base-address
+                            base-address
+                            0
+                            0
+                            (list (list 'base (current-repl-memory-ref base-address)))
+                            '())]
+                   [(> base-address include-address)
+                    (let ([offset (- (abs balance))])
+                      (values base-address
+                              include-address
+                              0
+                              offset
+                              '()
+                              (current-repl-memory-ref* base-address (sub1 offset))))]
+                   [(< base-address include-address)
+                    (let ([offset (abs balance)])
+                      (values include-address
+                              base-address
+                              offset
+                              0
+                              (reverse (current-repl-memory-ref* base-address (add1 offset)))
+                              '()))])]
+                [(upper-values lower-values)
+                 (let ([correct-value (match-lambda
+                                        [(list _ 'unreadable)
+                                         (error 'format-memory "invalid range between base-address and include-address")]
+                                        [(list a v)
+                                         (cond
+                                           [(eq? a base-address)
+                                            (list base-label v)]
+                                           [(eq? a include-address)
+                                            (list include-label v)]
+                                           [else v])])])
+                   (values (if (zero? balance)
+                               (list (list base-label (current-repl-memory-ref base-address)))
+                               (map correct-value upper-values))
+                           (map correct-value lower-values)))])
+    ;; Now that our initial window including the [base-address] and
+    ;; [include-address] is built, we continue to expand the window until it has
+    ;; a length of [number-of-values].
+    (let loop ([window-hi-address window-hi-addr]
+               [window-lo-address window-lo-addr]
+               [window-width      (add1 balance)]
+               [balance           balance]
+               [hi-offset         hi-offset]
+               [lo-offset         lo-offset]
+               [upper-values      upper-values]
+               [lower-values      lower-values])
+      ;; Is our window done expanding?
+      (if (>= window-width number-of-values)
+          ;; Yes; return the address-value pairs. Recall that the [upper-values]
+          ;; and [lower-values] are built from the inside out, so we reverse the
+          ;; [lower-values] to ensure our list is ordered from greatest address
+          ;; to least.
+          (append upper-values (reverse lower-values))
+          ;; No; we must expand. Expansion is governed by three factors:
+          ;;
+          ;;   1. Whether we are able to expand in the desired direction.
+          ;;   2. How we want to [align] the [base-address].
+          ;;   3. The [balance] owed due to the [include-address].
+          ;;
+          ;; First, we check in which directions we're able to expand.
+          (let* ([next-hi-offset      (and hi-offset (add1 hi-offset))]
+                 [next-lo-offset      (and lo-offset (sub1 lo-offset))]
+                 [next-hi-address     (and next-hi-offset (word-aligned-offset base-address next-hi-offset))]
+                 [next-lo-address     (and next-lo-offset (word-aligned-offset base-address next-lo-offset))]
+                 [next-hi-address-ok? (and next-hi-address (filter-address next-hi-address))]
+                 [next-lo-address-ok? (and next-lo-address (filter-address next-lo-address))]
+                 [next-hi-value       (and next-hi-address-ok? (current-repl-memory-ref next-hi-address))]
+                 [next-lo-value       (and next-lo-address-ok? (current-repl-memory-ref next-lo-address))]
+                 [next-hi-value-ok?   (and next-hi-value (filter-value next-hi-value))]
+                 [next-lo-value-ok?   (and next-lo-value (filter-value next-lo-value))]
+                 [expand-upwards      (λ ()
+                                        (loop next-hi-address
+                                              window-lo-address
+                                              (add1 window-width)
+                                              (case align
+                                                [(top)           (add1 balance)]
+                                                [(bottom center) (sub1 balance)])
+                                              next-hi-offset
+                                              lo-offset
+                                              (cons next-hi-value upper-values)
+                                              lower-values))]
+                 [expand-downwards    (λ ()
+                                        (loop window-hi-address
+                                              next-lo-address
+                                              (add1 window-width)
+                                              (case align
+                                                [(top)           (add1 balance)]
+                                                [(bottom center) (sub1 balance)])
+                                              hi-offset
+                                              next-lo-offset
+                                              upper-values
+                                              (cons next-lo-value lower-values)))])
+            (cond
+              ;; We're able to expand in either direction. Where should we go?
+              [(and next-hi-value-ok? next-lo-value-ok?)
+               (match (cons align balance)
+                 ;; We should expand in both directions simultaneously.
+                 [(cons 'center 0)
+                  (loop next-hi-address
+                        next-lo-address
+                        (+ 2 window-width)
+                        balance
+                        next-hi-offset
+                        next-lo-offset
+                        (cons next-hi-value upper-values)
+                        (cons next-lo-value lower-values))]
+                 ;; Either:
+                 ;;
+                 ;;   - We owe a debt requiring us to expand upwards.
+                 ;;   - We are trying to bottom-align and do not owe a debt.
+                 [(or (cons (or 'top 'center)      (? negative?))
+                      (cons     'bottom       (not (? negative?))))
+                  (expand-upwards)]
+                 ;; Either:
+                 ;;
+                 ;;   - We owe a debt requiring us to expand upwards.
+                 ;;   - We are trying to top-align and do not owe a debt.
+                 ;;   - We are trying to center-align and owe a debt downwards.
+                 [(or (cons     'bottom            (? negative?))
+                      (cons (or 'top 'center) (not (? negative?))))
+                  (expand-downwards)]
+                 ;; Otherwise, we don't know what's happening.
+                 [_
+                  (error 'retrieve-memory-values
+                         "unknown align/balance combination: ~v, ~v"
+                         align
+                         balance)])]
+              ;; We can only expand upwards.
+              [next-hi-value-ok? (expand-upwards)]
+              ;; We can only expand downwards.
+              [next-lo-value-ok? (expand-downwards)]
+              ;; We can't expand at all, so we must pad our list(s).
+              [else
+               (let ([total-pad-length (- number-of-values window-width)])
+                 (case pad-align
+                   ;; Add padding only at the bottom.
+                   [(top)
+                    (loop window-hi-address
+                          window-lo-address
+                          number-of-values
+                          balance
+                          hi-offset
+                          lo-offset
+                          upper-values
+                          (append (make-list total-pad-length bottom-pad-value) lower-values))]
+                   ;; Add padding only at the top.
+                   [(bottom)
+                    (loop window-hi-address
+                          window-lo-address
+                          number-of-values
+                          balance
+                          hi-offset
+                          lo-offset
+                          (append (make-list total-pad-length top-pad-value) upper-values)
+                          lower-values)]
+                   ;; Add padding around the retrieved values. We first attempt
+                   ;; to re-center the [base-address] by correcting for the
+                   ;; difference in the offsets, and then padding is added in
+                   ;; equal measure to both sides, with preference given to the
+                   ;; lower values if an odd amount must be added.
+                   [(center)
+                    (let*-values ([(align-pad-length) (- hi-offset (abs lo-offset))]
+                                  [(split-pad-length) (- total-pad-length (abs align-pad-length))]
+                                  [(split-pad-length extra-pad-length)
+                                   (if (positive? split-pad-length)
+                                       (quotient/remainder split-pad-length 2)
+                                       (values 0 0))]
+                                  [(upper-pad-length) (+ split-pad-length
+                                                         (if (negative? align-pad-length)
+                                                             (min total-pad-length (abs align-pad-length))
+                                                             split-pad-length))]
+                                  [(lower-pad-length) (+ split-pad-length
+                                                         extra-pad-length
+                                                         (if (positive? align-pad-length)
+                                                             (min total-pad-length align-pad-length)
+                                                             split-pad-length))])
+                      (loop window-hi-address
+                            window-lo-address
+                            number-of-values
+                            balance
+                            hi-offset
+                            lo-offset
+                            (append (make-list upper-pad-length top-pad-value)    upper-values)
+                            (append (make-list lower-pad-length bottom-pad-value) lower-values)))]))]))))))
+
 ;; Returns a string formatting the current instruction and its context, and
 ;; optionally also showing the previous instruction and its context (if
 ;; available).
-(define (format-instructions n-lines
+(define (format-instructions number-of-lines
                              [show-prev?     #t]
                              [max-width      (current-instruction-display-width)]
                              [prev-indicator "[p]"]
                              [curr-indicator "[c]"])
-
-  ;; Returns an association list mapping addresses to the instructions located
-  ;; at those addresses.
-  ;;
-  ;; An attempt is made to center the instructions around the base address.
-  ;; However, if insufficiently many instructions are available, the window is
-  ;; shifted. If there are simply not enough instructions available, even with a
-  ;; shift, then the necessary quantity of [#f] values are inserted to provide
-  ;; the best centering possible.
-  ;;
-  ;; If [include-address] is given, the window will center between
-  ;; [base-address] and [include-address] until the latter is within the window,
-  ;; and then the window will expand centered on [base-address].
-  ;;
-  ;; NOTE: It is assumed that [include-address] is not the same as
-  ;; [base-address], is within the natural maximum window range, and refers to a
-  ;; readable word in memory that contains an instruction. If any of these
-  ;; criteria is not met, [include-address] is treated as though it were [#f].
-  (define (retrieve-instructions/centering base-address n
-                                           #:base-label    [base-label      'base]
-                                           #:including     [include-address #f]
-                                           #:include-label [include-label   'include])
-    (unless (positive-integer? n)
-      (error 'retrieve-instructions/centering "Invalid desired window size: ~v" n))
-
-    ;; Ensure the [include-address] refers to a real instruction-containing
-    ;; address within the bounds of our possible window.
-    (set! include-address (and include-address
-                               (not (= include-address base-address))
-                               (or (<= include-address (word-aligned-offset base-address    n))
-                                   (>= include-address (word-aligned-offset base-address (- n))))
-                               (current-repl-address-readable? include-address)
-                               (instruction? (current-repl-memory-ref include-address))
-                               include-address))
-    ;; Build an association list of address-instruction pairs.
-    (let loop ([window-hi-addr     base-address]
-               [window-lo-addr     base-address]
-               [window-width       1]
-               [hi-offset          0]  ;; Offsets are set to [#f] if we can
-               [lo-offset          0]  ;; no longer expand in that direction.
-               [upper-values       '()]
-               [lower-values       '()]
-               [include-in-window? #f]
-               [include-upwards?   (and include-address (> include-address base-address))])
-      ;; Is our window done expanding?
-      (if (>= window-width n)
-          ;; Yes; return the address-instruction pairs. Recall that the
-          ;; [upper-values] and [lower-values] are built from the inside out, so
-          ;; we reverse the [lower-values] to go from greatest address to least.
-          (append upper-values
-                  (list (list base-label (current-repl-memory-ref base-address)))
-                  (reverse lower-values))
-          ;; No; we must expand.
-          (let* ([next-hi-offset (and hi-offset (add1 hi-offset))]
-                 [next-lo-offset (and lo-offset (sub1 lo-offset))]
-                 [next-hi-addr   (and next-hi-offset (word-aligned-offset base-address next-hi-offset))]
-                 [next-lo-addr   (and next-lo-offset (word-aligned-offset base-address next-lo-offset))]
-                 [new-hi-addr?   (and next-hi-addr (current-repl-address-readable? next-hi-addr))]
-                 [new-lo-addr?   (and next-lo-addr (current-repl-address-readable? next-lo-addr))]
-                 [new-hi-value   (and new-hi-addr? (current-repl-memory-ref next-hi-addr))]
-                 [new-lo-value   (and new-lo-addr? (current-repl-memory-ref next-lo-addr))]
-                 [new-hi-addr?   (instruction? new-hi-value)]
-                 [new-lo-addr?   (instruction? new-lo-value)])
-            ;; Do we need to keep looking for the [include-address]?
-            (if (and include-address (not include-in-window?))
-                ;; Yes. Should we be looking upwards?
-                (if include-upwards?
-                    ;; Yes; take a step that way. NOTE: Safe to assume progress.
-                    (let ([include-found? (<= include-address next-hi-addr)])
-                      (loop next-hi-addr
-                            window-lo-addr
-                            (add1 window-width)
-                            next-hi-offset
-                            lo-offset
-                            (cons (if include-found?
-                                      (list include-label new-hi-value)
-                                      new-hi-value)
-                                  upper-values)
-                            lower-values
-                            include-found?
-                            include-upwards?))
-                    ;; No; take a step downwards. NOTE: Safe to assume progress.
-                    (let ([include-found? (>= include-address next-lo-addr)])
-                      (loop window-hi-addr
-                            next-lo-addr
-                            (add1 window-width)
-                            hi-offset
-                            next-lo-offset
-                            upper-values
-                            (cons (if include-found?
-                                      (list include-label new-lo-value)
-                                      new-lo-value)
-                                  lower-values)
-                            include-found?
-                            include-upwards?)))
-                ;; No. Can we take a step upwards?
-                (if new-hi-addr?
-                    ;; Yes. Do we need to take more than one step, and can we
-                    ;; step in both directions?
-                    (if (and (>= (- n window-width) 2)
-                             new-lo-addr?)
-                        ;; Yes; take both steps and continue.
-                        (loop next-hi-addr
-                              next-lo-addr
-                              (+ 2 window-width)
-                              next-hi-offset
-                              next-lo-offset
-                              (cons new-hi-value upper-values)
-                              (cons new-lo-value lower-values)
-                              include-in-window?
-                              include-upwards?)
-                        ;; No; take one step upward and continue.
-                        (loop next-hi-addr
-                              window-lo-addr
-                              (add1 window-width)
-                              next-hi-offset
-                              lo-offset
-                              (cons new-hi-value upper-values)
-                              lower-values
-                              include-in-window?
-                              include-upwards?))
-                    ;; No. Can we take a step downwards?
-                    (if new-lo-addr?
-                        ;; Yes; take the step and continue.
-                        (loop window-hi-addr
-                              next-lo-addr
-                              (add1 window-width)
-                              #f  ;; We cannot expand upwards.
-                              next-lo-offset
-                              upper-values
-                              (cons new-lo-value lower-values)
-                              include-in-window?
-                              include-upwards?)
-                        ;; No; we must stop expanding. We will have to pad our
-                        ;; window with [#f]s appropriately.
-                        (let pad-loop ([upper-values upper-values]
-                                       [lower-values lower-values]
-                                       [window-width window-width])
-                          (cond
-                            [(>= window-width n)
-                             (loop window-hi-addr
-                                   window-lo-addr
-                                   window-width
-                                   hi-offset
-                                   lo-offset
-                                   upper-values
-                                   lower-values
-                                   include-in-window?
-                                   include-upwards?)]
-                            [(> (length upper-values) (length lower-values))
-                             (pad-loop upper-values (cons #f lower-values) (add1 window-width))]
-                            [else
-                             (pad-loop (cons #f upper-values) lower-values (add1 window-width))])))))))))
 
   ;; Selects instructions that will include both the previous and current
   ;; instruction. If the gap between these is too wide, a break will appear in
@@ -559,13 +696,17 @@
            [curr-instr-ptr (current-repl-instruction-pointer)]
            [word-diff (/ (abs (- prev-instr-ptr curr-instr-ptr)) word-size-bytes)])
       ;; Determine whether we need two separate instruction regions.
-      (if (> word-diff n-lines)
+      (if (> word-diff number-of-lines)
           ;; Yes, so generate two regions centered on each address.
-          (let* ([prev-n (- (quotient n-lines 2)
-                            (if (odd? n-lines) 0 1))]
-                 [curr-n (quotient n-lines 2)]
-                 [prev-instrs (retrieve-instructions/centering prev-instr-ptr prev-n #:base-label 'prev)]
-                 [curr-instrs (retrieve-instructions/centering curr-instr-ptr curr-n #:base-label 'curr)])
+          (let* ([prev-n (- (quotient number-of-lines 2)
+                            (if (odd? number-of-lines) 0 1))]
+                 [curr-n (quotient number-of-lines 2)]
+                 [prev-instrs (retrieve-memory-values prev-n prev-instr-ptr
+                                                      #:filter-value instruction?
+                                                      #:base-label   'prev)]
+                 [curr-instrs (retrieve-memory-values curr-n curr-instr-ptr
+                                                      #:filter-value instruction?
+                                                      #:base-label   'curr)])
             (if (> prev-instr-ptr curr-instr-ptr)
                 (append prev-instrs
                         (list 'break)
@@ -574,23 +715,26 @@
                         (list 'break)
                         prev-instrs)))
           ;; No; center on the current address but include the previous.
-          (retrieve-instructions/centering curr-instr-ptr n-lines
-                                           #:base-label    'curr
-                                           #:including     prev-instr-ptr
-                                           #:include-label 'prev))))
+          (retrieve-memory-values number-of-lines curr-instr-ptr
+                                  #:filter-value  instruction?
+                                  #:base-label    'curr
+                                  #:including     prev-instr-ptr
+                                  #:include-label 'prev))))
 
   ;; Selects [n] instructions that will include the current instruction as
   ;; centered as possible.
   (define (select-instructions/current n)
     (let ([curr-instr-ptr (current-repl-instruction-pointer)])
-      (retrieve-instructions/centering curr-instr-ptr n #:base-label 'curr)))
+      (retrieve-memory-values n curr-instr-ptr
+                              #:filter-value instruction?
+                              #:base-label   'curr)))
 
   ;; If we're meant to show the previous instruction AND the previous
   ;; instruction is actually available, do so. Otherwise, show only the current
   ;; instruction.
   (let* ([instrs (if (and show-prev? (previous-repl-instruction-pointer))
                      (select-instructions/current-and-previous)
-                     (select-instructions/current n-lines))]
+                     (select-instructions/current number-of-lines))]
          [indicator-width (max (string-length (or prev-indicator 0))
                                (string-length (or curr-indicator 0)))]
          [gutter-width (if (zero? indicator-width) 0 1)]
@@ -616,6 +760,7 @@
                                                 gutter-width)
                                              #\space)
                                 (format-i i))]
+                       [#f (make-string max-width #\space)]
                        [v (error 'format-instructions "Unknown value: ~v" v)])])
     (string-join (map format-a+i instrs)
                  "\n")))
