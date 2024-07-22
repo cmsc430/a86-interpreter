@@ -4,7 +4,8 @@
          show/compact
          show/complete)
 
-(require "format.rkt"
+(require "../memory.rkt"
+         "format.rkt"
          "repl-state.rkt")
 
 ;; [show] modes:
@@ -142,7 +143,12 @@
          [is-lines (string-split is-str "\n")]
          #;[max-is-line-len (apply max (map string-length is-lines))]
          [max-is-line-len (current-instruction-display-width)]
-         [st-str (format-memory 'rsp (quotient (current-instruction-display-count) 2))]
+         [rsp-base (current-repl-register-ref 'rsp)]
+         [st-str (format-memory (quotient (current-instruction-display-count) 2)
+                                rsp-base
+                                #:label "rsp"
+                                #:including (address-range-hi (current-repl-memory) stack)
+                                #:include-label "stack top")]
          [st-lines (string-split st-str "\n")]
          ;; TODO: It'd be nice to generalize this and make it more configurable.
          #;[max-st-line-len (apply max (map string-length st-lines))]

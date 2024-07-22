@@ -115,28 +115,39 @@
       [(s st stack)
        (match xs
          [(list (? positive-integer? n))
-          (displayln (format-memory 'rsp n))]
+          (displayln (format-memory n (current-repl-register-ref 'rsp)))]
          [(list (? number? n))
           (abort (displayln "numerical argument to 'show ~a' must be a positive integer; got ~a" x n))]
          [_
-          (displayln (format-memory 'rsp 4))])]
+          (displayln (format-memory 4 (current-repl-register-ref 'rsp)))])]
       ;; Display part of memory.
       [(m mem memory)
        (match xs
          [(cons base xs)
-          (unless (or (register? base)
-                      (address? base))
-            (abort (displayln "base argument to 'show ~a' must be a register or address; got ~a" x base)))
-          (match xs
-            ['()
-             (displayln (format-memory base -4))]
-            [(list (and (? exact-integer? n)
-                        (not (? zero?))))
-             (displayln (format-memory base n))]
-            [(list (? number? n))
-             (abort (displayln "numerical argument to 'show ~a ~a' must be a positive or negative integer; got ~a" x base n))]
-            [v
-             (abort (displayln "unknown 'show ~a ~a' argument: ~a" x base v))])])]
+          (let ([base-address (cond
+                                [(register? base) (current-repl-register-ref base)]
+                                [(address?  base) base]
+                                [else
+                                 (abort (displayln "base argument to 'show ~a' must be a register or address; got ~a"
+                                                   x
+                                                   base))])])
+            (match xs
+              ['()
+               (displayln (format-memory 4 base-address #:align 'top))]
+              [(list (and (? exact-integer? n)
+                          (not (? zero?))))
+               (displayln (format-memory (abs n)
+                                         base-address
+                                         #:align (if (negative-integer? n)
+                                                     'top
+                                                     'bottom)))]
+              [(list (? number? n))
+               (abort (displayln "numerical argument to 'show ~a ~a' must be a positive or negative integer; got ~a"
+                                 x
+                                 base
+                                 n))]
+              [v
+               (abort (displayln "unknown 'show ~a ~a' argument: ~a" x base v))]))])]
       ;; Display flag(s).
       [(f fs flag flags)
        (displayln

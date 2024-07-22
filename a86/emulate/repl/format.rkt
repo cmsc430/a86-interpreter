@@ -4,6 +4,7 @@
          current-memory-value-hex-display-width
          current-memory-value-render-display-width
          current-memory-value-separator
+         current-memory-address-display-width
          current-instruction-display-count
          current-instruction-display-width
 
@@ -49,8 +50,8 @@
 ;; rendered representation of a value in a memory display. However, if the
 ;; [current-memory-value-render-display-width] is [#f], this will not be shown.
 (define current-memory-value-separator            (make-parameter "  "))
-;; The width of addresses in a memory display.
-(define current-memory-address-display-width      (make-parameter 10))
+;; The width of (hexadecimal) addresses in a memory display.
+(define current-memory-address-display-width      (make-parameter 6))
 ;; The number of instructions to show in an instruction display.
 (define current-instruction-display-count         (make-parameter 11))
 ;; The width of instructions (with indicators) in an instruction display.
@@ -331,81 +332,6 @@
                (values string-parts
                        arguments))))]))
 
-;; Returns a string formatting values in memory with their addresses, where the
-;; high addresses are displayed at the top, and each word is visually divided
-;; with borders.
-;;
-;; A positive [n] indicates that the [base] address is the lowest address, while
-;; a negative [n] indicates that the [base] address is the greatest address.
-(define (format-memory base n [direction (if (positive? n) 'up 'down)])
-  (unless (not (zero? n))
-    (raise-argument-error 'format-memory "non-zero integer?" n))
-  (let*-values ([(n) (abs n)]
-                [(base-address label)
-                 (match base
-                   [(? register?) (values (current-repl-register-ref base)
-                                          (~a base))]
-                   [(? address?)  (values base
-                                          #f)])]
-                [(as+vses max-v-str-length max-address-length)
-                 (for/fold ([as+vses            '()]
-                            [max-v-str-length     0]
-                            [max-address-length   0])
-                           ([i (in-range n)]
-                            ;; We want the high addresses to appear at the top,
-                            ;; but we're constructing the list backwards, so if
-                            ;; we're counting ['up] from the [base-address] then
-                            ;; we start with the zero offset and work up, and if
-                            ;; we're counting ['down] from the [base-address]
-                            ;; then we start with the greatest offset and work
-                            ;; down.
-                            #:do [(define a (+ base-address
-                                               (match direction
-                                                 ['up   (* 8 i)]
-                                                 ['down (* -8 (- n (add1 i)))])))]
-                            #:when (current-repl-address-readable? a))
-                   ;; For formatting these boxes, we first format the values in
-                   ;; hex, then compare their lengths, and then generate strings
-                   ;; for all of them of similar lengths. This makes comparison
-                   ;; and printing nice without including more leading zeroes
-                   ;; than necessary.
-                   (let* ([v (current-repl-memory-ref a)]
-                          [v-str (if (a86-value? v)
-                                     (~r v #:base 16)
-                                     #f)]
-                          [a-str (~r a #:base 16)])
-                     (values (cons (cons (if (and label (= a base-address))
-                                             (~a a-str "  [" label "]")
-                                             a-str)
-                                         v-str)
-                                   as+vses)
-                             (max max-v-str-length  (or (and (string? v-str)
-                                                              (string-length v-str))
-                                                         0))
-                             (max max-address-length (string-length a-str)))))]
-                ;; Divider is 4 longer than the maximum length of a value string
-                ;; because each value will be prefixed with "0x" and surrounded
-                ;; by one space on each side.
-                [(divider) (format "+~a+" (make-string (+ 4 max-v-str-length) #\-))])
-    (string-join (cons divider
-                       (map (match-lambda
-                              [(cons a-str v-str)
-                               (format "\n| ~a |\n~a  0x~a"
-                                       (if v-str
-                                           (~a "0x"
-                                               (~a v-str
-                                                   #:pad-string "0"
-                                                   #:width max-v-str-length
-                                                   #:align 'right))
-                                           (make-string (+ 2 max-v-str-length) #\X))
-                                       divider
-                                       (~a a-str
-                                           #:width max-address-length
-                                           #:pad-string "0"
-                                           #:align 'right))])
-                            as+vses))
-                 "")))
-
 ;; Retrieves the [number-of-values] around [base-address] values from memory,
 ;; attempting to [align] the [base-address] in a particular way. If an
 ;; [include-address] is given, then an attempt is made to include that address's
@@ -458,8 +384,8 @@
   ;; address within the bounds of our possible window.
   (set! include-address (and include-address
                              (not (= include-address base-address))
-                             (or (<= include-address (word-aligned-offset base-address    number-of-values))
-                                 (>= include-address (word-aligned-offset base-address (- number-of-values))))
+                             (and (<= include-address (word-aligned-offset base-address (sub1  number-of-values)))
+                                  (>= include-address (word-aligned-offset base-address (-     number-of-values))))
                              (filter-address include-address)
                              (filter-value (current-repl-memory-ref include-address))
                              include-address))
@@ -521,9 +447,13 @@
                                         [(list a v)
                                          (cond
                                            [(eq? a base-address)
-                                            (list base-label v)]
+                                            (if base-label
+                                                (list base-label v)
+                                                v)]
                                            [(eq? a include-address)
-                                            (list include-label v)]
+                                            (if include-label
+                                                (list include-label v)
+                                                v)]
                                            [else v])])])
                    (values (if (zero? balance)
                                (list (list base-label (current-repl-memory-ref base-address)))
@@ -568,9 +498,11 @@
                                         (loop next-hi-address
                                               window-lo-address
                                               (add1 window-width)
-                                              (case align
-                                                [(top)           (add1 balance)]
-                                                [(bottom center) (sub1 balance)])
+                                              (if include-address
+                                                  (case align
+                                                    [(top)           (add1 balance)]
+                                                    [(bottom center) (sub1 balance)])
+                                                  balance)
                                               next-hi-offset
                                               lo-offset
                                               (cons next-hi-value upper-values)
@@ -579,9 +511,11 @@
                                         (loop window-hi-address
                                               next-lo-address
                                               (add1 window-width)
-                                              (case align
-                                                [(top)           (add1 balance)]
-                                                [(bottom center) (sub1 balance)])
+                                              (if include-address
+                                                  (case align
+                                                    [(top)           (add1 balance)]
+                                                    [(bottom center) (sub1 balance)])
+                                                  balance)
                                               hi-offset
                                               next-lo-offset
                                               upper-values
@@ -678,6 +612,93 @@
                             lo-offset
                             (append (make-list upper-pad-length top-pad-value)    upper-values)
                             (append (make-list lower-pad-length bottom-pad-value) lower-values)))]))]))))))
+
+;; Returns a string formatting values in memory with their addresses, where the
+;; high addresses are displayed at the top, and each word is visually divided
+;; with borders.
+;;
+;; The display will always show as many values as possible to maximize use of
+;; the [number-of-lines]. A [base-address] is given to determine what range of
+;; values to display.
+;;
+;; The [align]ment attempts to place the [base-address] at a particular point in
+;; the range of displayed values. However, the [filter-proc] can be used to
+;; scroll the visible window by preventing the display of undesirable words.
+;;
+;; Each display box contains one line of text and is wide enough to fit the
+;; hexadecimal representation of the value, a separator (if specified), and the
+;; rendered representation of the value. These widths are governed by
+;; [current-memory-value-hex-display-width], [current-memory-value-separator],
+;; and [current-memory-value-render-display-width], respectively.
+;;
+;; The rendered representation is only generated and displayed under two
+;; conditions:
+;;
+;;   1. The value of [current-memory-value-render-display-width] is not [#f].
+;;   2. The value is not an [a86-value?] (e.g., the [end-of-program-signal]).
+;;
+;; Otherwise, only the hexadecimal representation will be shown.
+(define (format-memory number-of-values
+                       base-address
+                       [render-proc ~v]
+                       [filter-proc current-repl-address-readable?]
+                       #:align         [align           'bottom]
+                       #:label         [base-label      #f]
+                       #:including     [include-address #f]
+                       #:include-label [include-label   #f])
+  (let* ([values (retrieve-memory-values number-of-values
+                                         base-address
+                                         #:filter-address filter-proc
+                                         #:align          align
+                                         #:base-label     base-label
+                                         #:including      include-address
+                                         #:include-label  include-label)]
+         [memory-value-render-display-width (current-memory-value-render-display-width)]
+         [interior-display-width (+ 2  ;; Account for "0x" prefix.
+                                    (current-memory-value-hex-display-width)
+                                    (or memory-value-render-display-width      0)
+                                    (or (and memory-value-render-display-width
+                                             (current-memory-value-separator)) 0))]
+         [horizontal-border (format "+~a+" (make-string (+ 2 interior-display-width) #\-))])
+    (string-join (for/fold ([lines (list horizontal-border)]
+                            #:result (reverse lines))
+                           ([value values])
+                   (cons (match value
+                           [(list label _)
+                            (format "~a  [~a]" horizontal-border label)]
+                           [_ horizontal-border])
+                         (cons (match value
+                                 ;; If it's an a86 value, format the value in
+                                 ;; hex, truncating or padding from the left as
+                                 ;; needed.
+                                 ;;
+                                 ;; Then, if desired, add the separator and the
+                                 ;; rendered version of the value.
+                                 [(or (list _ (? a86-value? value))
+                                      (? a86-value? value))
+                                  (format "| 0x~a~a~a |"
+                                          (~a (~r value #:base 16)
+                                              #:width (current-memory-value-hex-display-width)
+                                              #:align 'right
+                                              #:pad-string "0"
+                                              #:limit-prefix? #t
+                                              #:limit-marker "...")
+                                          (if memory-value-render-display-width
+                                              (current-memory-value-separator)
+                                              "")
+                                          (if memory-value-render-display-width
+                                              (~a (render-proc value)
+                                                  #:width memory-value-render-display-width)
+                                              ""))]
+                                 ;; If the value is not an a86 value, we just
+                                 ;; display it in the full box.
+                                 [(or (list _ value)
+                                      value)
+                                  (format "| ~a |"
+                                          (~a (render-proc value)
+                                              #:width interior-display-width))])
+                               lines)))
+                 "\n")))
 
 ;; Returns a string formatting the current instruction and its context, and
 ;; optionally also showing the previous instruction and its context (if
