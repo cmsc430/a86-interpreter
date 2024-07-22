@@ -101,8 +101,7 @@
          [_      (begin
                    (memory-set! mem (address-range-hi mem stack) 0 0)
                    (memory-set! mem
-                                (lesser-word-aligned-address
-                                 (address-range-hi mem stack))
+                                (address-range-hi mem stack)
                                 0
                                 end-of-program-signal))]
          [_      (debug "initial memory adjusted for end-of-program signal")]
@@ -114,8 +113,7 @@
                             ip
                             fresh-flags
                             (register-set* fresh-registers
-                                           'rsp (lesser-word-aligned-address
-                                                 (address-range-hi mem stack))
+                                           'rsp (address-range-hi mem stack)
                                            'rdi (address-range-lo mem heap))
                             (list)
                             (list)
