@@ -1,6 +1,7 @@
 #lang racket
 
 (provide memory?
+         Memory-name->section
          handling-strategy-limited
          handling-strategy-rotating
          handling-strategy-unlimited
@@ -20,11 +21,11 @@
          address-readable?
          address-writable?
          (rename-out [Memory-address->name address-section-name])
+         memory-calloc!
+         memory-free!
          memory-ref
          memory-ref*
          memory-set!
-         heap-allocate-space!
-         heap-free-space!
 
          in-memory-section
 
@@ -267,6 +268,16 @@
   (cond
     [(Memory-address->name memory address)
      => (λ (name) (member name read-write-sections))]))
+
+;; Allocates a new region of zeroed-out memory in the heap section, returning
+;; the lowest address of the new region. Raises an error if the region cannot be
+;; created.
+(define/debug (memory-calloc! memory size)
+  (heap-allocate-space! (Memory-name->section heap) size))
+
+;; Frees a previously allocated region of memory.
+(define/debug (memory-free! memory base-offset)
+  (heap-free-space! (Memory-name->section heap) base-offset))
 
 ;; Given a [Memory?] and address, looks up the current value stored at that
 ;; address in memory. Raises an error if the address cannot be accessed.

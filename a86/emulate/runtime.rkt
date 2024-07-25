@@ -20,6 +20,12 @@
           [runtime/registers           (parameter/c registers?)]
           [runtime/memory              (parameter/c memory?)]
           [runtime/stack-pointer       (parameter/c a86-value?)]
+          [runtime/memory-ref          (parameter/c (->* [address?]
+                                                         [positive-integer?]
+                                                         any/c))]
+          [runtime/memory-set!         (parameter/c (->* [address? a86-value?]
+                                                         [positive-integer?]
+                                                         any/c))]
           ;; Using a runtime.
           [runtime-has-func?           (case-> (->          symbol? boolean?)
                                                (-> runtime? symbol? boolean?))]
@@ -49,7 +55,8 @@
           [jig                         runtime?]
           [knock                       runtime?]
           [loot                        runtime?]
-          [hoodwink                    runtime?])
+          [hoodwink                    runtime?]
+          [mug                         runtime?])
          ;; Defining runtimes.
          define-runtime
          define-runtimes
@@ -87,6 +94,8 @@
 (define runtime/registers     (make-parameter #f))
 (define runtime/memory        (make-parameter #f))
 (define runtime/stack-pointer (make-parameter #f))
+(define runtime/memory-ref    (make-parameter #f))
+(define runtime/memory-set!   (make-parameter #f))
 
 ;; Converts an external runtime function into a function that can be used with
 ;; our machine.
@@ -108,7 +117,7 @@
       (raise-user-error 'initialize-state "a86 only supports runtime functions with fixed arity"))
     (let* ([reg-argc (min arity (length argument-registers))]
            [mem-argc (- arity reg-argc)])
-      (λ (flags registers memory stack-pointer)
+      (λ (flags registers memory time-tick stack-pointer)
         (let* ([reg-args (for/list ([_ (in-range reg-argc)]
                                     [reg argument-registers])
                            (register-ref registers reg))]
@@ -119,7 +128,13 @@
           (parameterize ([runtime/flags         flags]
                          [runtime/registers     registers]
                          [runtime/memory        memory]
-                         [runtime/stack-pointer stack-pointer])
+                         [runtime/stack-pointer stack-pointer]
+                         [runtime/memory-ref
+                          (λ (address [byte-count word-size-bytes])
+                            (memory-ref (runtime/memory) address time-tick byte-count))]
+                         [runtime/memory-set!
+                          (λ (address value [byte-count word-size-bytes])
+                            (memory-set! (runtime/memory) address time-tick value byte-count))])
             (apply func (map a86-value->signed-integer all-args))))))))
 
 ;; Resets the [current-runtime] hash.
@@ -271,7 +286,6 @@
                                    (convert b uchar)))]]
   [(guarded-write-byte b) o [(write-byte (convert b char))]])
 
-
 ;; C standard library implementation.
 ;;
 ;;   malloc
@@ -285,8 +299,18 @@
 ;;   sizeof
 ;;   memcpy
 
+;; Allocates sufficient words to store [num] items of size [size].
+;;
+;; NOTE: The [size] is given in number of bytes.
+#;(define (calloc num size)
+  (let*-values ([(base-bytes extra-bytes)
+                 (quotient/remainder (* num size) word-size-bytes)]
+                [(number-of-words)
+                 (+ base-bytes (if (zero? extra-bytes) 0 1))])
+    (memory-calloc! (runtime/memory) number-of-words)))
+
 #;(define-runtime libc
-  ([(malloc size) ()]))
+  ([(calloc num size) (calloc num size)]))
 
 ;; The base runtimes are just the default runtime with different names.
 (define-runtimes (abscond blackmail con dupe dodger) #:extending default-runtime ())
@@ -311,8 +335,53 @@
      [(collect_garbage) #f]
      [(alloc_val)       #f]))
 
-;; TODO: Implement these.
-#;(define-runtime mountebank #:extending loot
-  ([(intern_symbol symb)  #f]
-   [(symb_cmp s1 s2)      #f]
-   [(memcpy dest src len) #f]))
+(define (symbol-compare s1 s2)
+  (if (= s1 s2)
+      0
+      (let* ([len1 (memory-ref (runtime/memory) s1)]
+             [len2 (memory-ref (runtime/memory) s2)]
+             [len  (min len1 len2)])
+        (let loop ([i 1])
+          (if (<= i len)
+              ;; Check the next element.
+              (let ([c1 (memory-ref (runtime/memory) (word-aligned-offset s1 i))]
+                    [c2 (memory-ref (runtime/memory) (word-aligned-offset s2 i))])
+                (if (= c1 c2)
+                    ;; Elements are equal, so continue.
+                    (loop (add1 i))
+                    ;; Return the difference.
+                    (- c1 c2)))
+              ;; We've iterated through the elements; return the difference in
+              ;; the lengths.
+              (- len1 len2))))))
+
+(struct Node (elem left right))
+(define symbol-table (make-parameter (box #f)))
+(define (intern-symbol symb)
+  (let loop ([curr (symbol-table)])
+    (match (unbox curr)
+      [#f (let ([n (Node symb (box #f) (box #f))])
+            (set-box! curr n))]
+      [(Node elem left right)
+       (let ([r (symbol-compare symb elem)])
+         (cond
+           [(zero? r) elem]
+           [(positive? r) (loop right)]
+           [(negative? r) (loop left)]))])))
+
+(define (memcpy dest src num)
+  (let-values ([(words extra-bytes) (quotient/remainder num word-size-bytes)])
+    (for ([i (in-range words)])
+      (runtime/memory-set! (word-aligned-offset dest i)
+                           (runtime/memory-ref (word-aligned-offset src i))))
+    (when (not (zero? extra-bytes))
+      (runtime/memory-set! (word-aligned-offset dest words)
+                           (runtime/memory-ref (word-aligned-offset src words)
+                                               extra-bytes)
+                           extra-bytes))
+    dest))
+
+(define-runtime mug #:extending loot
+  ([(intern_symbol symb)  (intern-symbol symb)]
+   [(symb_cmp s1 s2)      (symbol-compare s1 s2)]
+   [(memcpy dest src num) (memcpy dest src num)]))

@@ -113,7 +113,7 @@
 (define/debug (make-heap max-size [initial-allocation-size #f])
   (let ([heap (Heap '() 0 max-size)])
     (when initial-allocation-size
-      (heap-allocate-space! heap initial-allocation-size))
+      (void (heap-allocate-space! heap initial-allocation-size)))
     heap))
 
 ;; Returns a vector containing the [Cell?]s corresponding to the offset.
@@ -135,7 +135,8 @@
                        (add-cell (vector-ref contents adjusted-offset) cell)))
         (raise-a86-emulator-segfault-error "no heap allocation for offset: ~v" offset))))
 
-;; Extends the heap by allocating more memory.
+;; Extends the heap by allocating [new-allocation-size] more memory. The size is
+;; given in words. Returns the lowest address of the new region.
 (define/debug (heap-allocate-space! heap new-allocation-size)
   (let ([curr-size (Heap-curr-size heap)]
         [max-size (Heap-max-size heap)])
@@ -150,7 +151,8 @@
                          (sub1 new-size))
                    allocation-contents)
              (Heap-allocations heap)))
-      (set-Heap-curr-size! heap new-size))))
+      (set-Heap-curr-size! heap new-size)
+      curr-size)))
 
 ;; Removes the allocation whose low offset is equal to the given offset. If no
 ;; allocation is freed, there is no effect on the internal memory and no error

@@ -464,7 +464,7 @@
              ;; external function in the runtime, we call that function.
              (let* ([func (process-argument dst #:as 'external-function)]
                     [sp (register-ref 'rsp)]
-                    [result (func flags registers memory sp)])
+                    [result (func flags registers memory time-tick sp)])
                (cond
                  [(void? result)
                   (make-step-state)]
