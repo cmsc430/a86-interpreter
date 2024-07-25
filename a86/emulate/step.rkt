@@ -634,8 +634,19 @@
           ;; dst = src  % when [Cmp a1 a2] unsets the carry flag.
           (move-with-condition dst src flags-nc?)]
 
-         [(Lea dst l)
-          (let ([ea (hash-ref labels->addresses l)])
+         [(Lea dst src)
+          (let ([ea (let decode-loop ([x src])
+                      (match x
+                        [(? integer?)
+                         x]
+                        [(? symbol?)
+                         (process-argument x #:as 'label)]
+                        [(? offset?)
+                         (process-argument x #:as 'offset)]
+                        [(Plus e1 e2)
+                         (let ([v1 (decode-loop e1)]
+                               [v2 (decode-loop e2)])
+                           (+ v1 v2))]))])
             (cond
               [(register? dst)
                ;; dst = address-of(l)
@@ -644,6 +655,7 @@
                ;; memory[dst] = address-of(l)
                (memory-set! (address-from-offset dst) ea)
                (make-step-state)]))]
+
          [_
           (raise-user-error 'step
                             "unrecognized instruction ~v at address ~a"
