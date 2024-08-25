@@ -30,7 +30,9 @@
          greater-word-aligned-address
          lesser-word-aligned-address
          aligned-to-word?
-         seq)
+         seq
+         split-first
+         filter*)
 
 ;; The size of words, given in bytes.  This language is defined only for 64-bit
 ;; architectures, so we use 8-byte words.
@@ -189,13 +191,134 @@
          '()
          xs))
 
+;; Like [(split-at lst 1)], except the first result is returned as just the
+;; element instead of a list.
+(define (split-first lst)
+  (match lst
+    ['() (raise-argument-error 'split-first "a list with at least 1 element" lst)]
+    [(cons x xs) (values x xs)]))
+
+;; Filter a number of lists, such that the lists will be filtered down in step
+;; with one another. For example:
+;;
+;;   > (filter* (list (λ (n) (> n 3))
+;;                    (λ (s) (not (string-equal? s ""))))
+;;       '(7 2 4 5 1)
+;;       '("foo" "bar" "" "baz" "qux"))
+;;   '(7 5)
+;;   '("foo" "baz")
+;;
+;; The first argument can be one of:
+;;
+;;   - [#f], in which case layers will be discarded when element(s) are [#f].
+;;   - A procedure, in which case layers will be discarded when the procedure
+;;     returns [#f] when applied to any element in that layer.
+;;   - A list of procedures of equal length to the number of lists passed in, in
+;;     which case each predicate is applied only to elements of the
+;;     corresponding list and layers are discarded when any predicate returns
+;;     [#f].
+(define (filter* preds . lsts)
+  ;; Stores the next values while iterating over each layer of the [xss].
+  (define nexts (make-vector (length lsts) #f))
+  ;; Stores the new (pruned) result lists.
+  (define rss   (make-vector (length lsts) '()))
+
+  (define (raise-incompatible-list-length-error lst-idx)
+    (raise-arguments-error 'filter* "all lists must have same size"
+                           "first list length" (length (first lsts))
+                           "other list length" (length (list-ref lsts lst-idx))))
+
+  ;; Processes each [xs] in [xss] to drop layers with elements that do not pass
+  ;; their corresponding predicates. The end result is the same number of lists
+  ;; that were passed in, but their lengths will all be the same.
+  (define (descend xss accumulated?)
+    ;; If nexts were accumulated, add them into the result lists.
+    (when accumulated?
+      (for ([(next idx) (in-indexed (in-vector nexts))])
+        (vector-set! rss idx (cons next (vector-ref rss idx)))))
+    ;; Process the remainders of the lists.
+    (match xss
+      ;; If the list of lists is empty, we're done. Reverse the sub-lists and
+      ;; return them.
+      ['()
+       (vector-map! reverse rss)
+       (vector->values rss)]
+      ;; If the first sub-list is empty, ensure all the others are also empty.
+      [(cons '() xss)
+       (let null-loop ([xss xss]
+                       [idx 1])
+         (match xss
+           ;; We've completed the check successfully. Recurse one last time to
+           ;; trigger the regular completion process.
+           ['()            (descend xss #f)]
+           ;; The next sub-list is empty, so check the remainders.
+           [(cons '() xss) (null-loop xss (add1 idx))]
+           ;; The next sub-list is not empty, so raise an error.
+           [_              (raise-incompatible-list-length-error idx)]))]
+      ;; Otherwise, process the next layer of the sub-lists.
+      ;;
+      ;; NOTE: We are promising that the first list is non-empty.
+      [_ (accumulate xss '() 0 preds #f)]))
+
+  ;; Iterates over each [xs] in [xss] to find all [x] that are accepted by their
+  ;; corresponding [pred].
+  ;;
+  ;;   xss         - the list of lists to process
+  ;;   yss         - a new list of lists built from the [cdr]s of the [xss], to
+  ;;                 be used during the recursive call
+  ;;   lst-idx     - the index of the current list in [xss] we're on
+  ;;   preds       - either [#f], a predicate,  or a list of predicates
+  ;;   found-next? - whether a next value has been found in this iteration
+  (define (accumulate xss yss lst-idx preds found-next?)
+    (match xss
+      ;; If the list of lists is empty, we've completed iterating over this
+      ;; layer of the sub-lists.
+      ['() (descend (reverse yss) found-next?)]
+      ;; If the next list is empty, we know we have an error because we were
+      ;; promised that at least the first list is non-empty by [descend].
+      [(cons '() _) (raise-incompatible-list-length-error lst-idx)]
+      ;; Otherwise, we have at least one element in the next list. We strip it
+      ;; off and check it matches the relevant predicate.
+      [(cons (cons x xs) xss)
+       (let-values ([(pred preds)
+                     (cond
+                       [(procedure? preds) (values preds preds)]
+                       [(cons? preds)      (split-first preds)]
+                       [(eq? preds #f)     (values identity #f)]
+                       [else (raise-argument-error 'filter* "#f, a procedure, or a list of procedures" preds)])])
+         (if (pred x)
+             ;; The value is accepted; accumulate it.
+             (begin
+               (vector-set! nexts lst-idx x)
+               (accumulate xss (cons xs yss) (add1 lst-idx) preds #t))
+             ;; The value is not accepted; we skip this layer.
+             (discard xss (cons xs yss) (add1 lst-idx))))]))
+
+  ;; Iterates over each [xs] in [xss] to ensure every list is non-empty, but do
+  ;; not retain the elements encountered. If a list is empty, raise an error.
+  (define (discard xss yss lst-idx)
+    (match xss
+      ;; If the list of lists is empty, we've successfully discarded this layer.
+      ['() (descend (reverse yss) #f)]
+      ;; If the next list is empty, we have an error.
+      [(cons '() _) (raise-incompatible-list-length-error lst-idx)]
+      ;; Otherwise, we discard the next [x] and continue discarding.
+      [(cons (cons _ xs) xss)
+       (discard xss (cons xs yss) (add1 lst-idx))]))
+
+  (descend lsts #f))
+
 ;; An extended version of [racket/syntax].
-(module racket/syntax racket
+(module* racket/syntax #f
   (provide format-ids
+           with-syntax-values
+           with-pruned-syntax-lists
+           define/syntax-parse/filtered
            (all-from-out racket/syntax))
 
   (require racket/syntax
-           (for-syntax racket/syntax
+           (for-syntax racket/string
+                       racket/syntax
                        syntax/parse))
 
   ;; Like [format-id], but operates on a list of syntax objects to apply each of
@@ -208,4 +331,77 @@
        #'(map (λ (lctx)
                 (let ([this-lctx lctx])
                   (format-id lctx fmt-str arg ...)))
-              lctxs)])))
+              lctxs)]))
+
+  #;(with-syntax-values ([((x ...) (y ...))
+                          (values #'(1 2 3)
+                                  #'(a b c))])
+      #'(foo ([x y] ...) bar))
+  ;; ==>
+  ;; #<syntax:string:4:4 (foo ((1 a) (2 b) (3 c)) bar)>
+
+  (define-syntax (with-syntax-values stx)
+    (syntax-parse stx
+      [(_ () body ...+)
+       #'(with-syntax () body ...)]
+      [(_ ([{pattern ...} stx-vals-expr])
+          body ...+)
+       #:with (stx-vals-subexpr-var ...) (map (λ (pat-stx) (format-id pat-stx "stx-vals-subexpr-var-~a" (gensym)))
+                                              (syntax->list #'(pattern ...)))
+       #'(call-with-values (λ () stx-vals-expr)
+                           (λ (stx-vals-subexpr-var ...)
+                             (with-syntax ([pattern stx-vals-subexpr-var] ...)
+                               body ...)))]
+      [(_ ([{pattern0 ...} stx-vals-expr0]
+           [{pattern  ...} stx-vals-expr ] ...+)
+          body ...+)
+       #'(with-syntax-values ([{pattern0 ...} stx-vals-expr0])
+           (with-syntax-values ([{pattern ...} stx-vals-expr] ...)
+             body ...))]))
+
+  #;(with-pruned-syntax-lists ([(x ...) (list #'x #'y #'z)]
+                               [(y ...) (list #'1 #f  #'3)])
+      #'(foo ([x y] ...) bar))
+  ;; ==>
+  ;; #<syntax:string:3:8 (foo ((x 1) (z 3)) bar)>
+
+  (define-syntax (with-pruned-syntax-lists stx)
+    (syntax-parse stx
+      [(_ [(pattern stx-lst-exp) ...] body ...+)
+       #'(with-syntax-values ([(pattern ...) (apply filter* #f (list stx-lst-exp ...))])
+           body ...)]))
+
+  (define-syntax (define/syntax-parse/filtered stx)
+    (define-syntax-class id+class
+      #:attributes (name class)
+
+      (pattern name+class:id
+
+               #:attr parts (regexp-match #rx"^([^:]+):(.+)$" (symbol->string (syntax-e #'name+class)))
+
+               #:fail-when (and (not (attribute parts))
+                                #'name+class)
+               "expected identifier with syntax class annotation"
+
+               #:with name  (format-id #'name+class (cadr  (attribute parts)))
+               #:with class (format-id #'name+class (caddr (attribute parts)))))
+
+    (define-syntax-class ellipsis
+      (pattern (~datum ...)))
+
+    (define-syntax-class id+class-list
+      #:attributes (name+class name class)
+
+      (pattern (name+class:id+class _:ellipsis)
+               #:with name  #'name+class.name
+               #:with class #'name+class.class))
+
+    (syntax-parse stx
+      [(_ spec:id+class-list stx-expr)
+
+       #:with t       (format-id #'spec "t")
+       #:with t+class (format-id #'t "~a:~a" #'t #'spec.class)
+
+       #`(define/syntax-parse (spec.name+class #,(datum->syntax #'here '...))
+           (filter-map (λ (type-stx) (syntax-parse type-stx [t+class #'t] [_ #f]))
+                       (syntax->list stx-expr)))])))
