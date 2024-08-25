@@ -202,8 +202,8 @@
   ;; them to the format string.
   (define-syntax (format-ids stx)
     (syntax-parse stx
-      [(_ lctxs fmt-str)
-       #'(format-ids this-stx lctxs fmt-str this-stx)]
+      [(_ lctxs fmt-str (~seq kw:keyword arg) ...)
+       #'(format-ids this-stx lctxs fmt-str this-stx (~@ kw arg) ...)]
       [(_ this-lctx:id lctxs fmt-str arg ...)
        #'(map (λ (lctx)
                 (let ([this-lctx lctx])

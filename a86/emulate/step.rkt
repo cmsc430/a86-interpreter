@@ -222,10 +222,15 @@
                  (record-flag-transaction! (make-flag-write-transaction #t new-flags))
                  new-flags))]
             [register-ref
-             (λ (register)
-               (let ([value (original-register-ref registers register)])
-                 (record-register-transaction! (make-register-read-transaction register value))
-                 value))]
+             (case-lambda
+               [(registers register)
+                (let ([value (original-register-ref registers register)])
+                  (record-register-transaction! (make-register-read-transaction register value))
+                  value)]
+               [(register)
+                (let ([value (original-register-ref registers register)])
+                  (record-register-transaction! (make-register-read-transaction register value))
+                  value)])]
             [register-set
              (case-lambda
                [(registers register value)
@@ -345,7 +350,7 @@
                        (raise-user-error 'step "not a valid label: ~a" arg)])]
                    [(and (interpretation-matches? 'external-function)
                          (symbol? arg))
-                    (let ([external-function (runtime-ref arg)])
+                    (let ([external-function (runtime-function-ref arg)])
                       (if external-function
                           external-function
                           (raise-user-error 'step "not a valid external function: ~a" arg)))]
@@ -459,27 +464,32 @@
          [(Call dst)
           ;; % The handling of a Call depends upon the argument.
           (cond
-            [(runtime-has-func? dst)
+            [(runtime-has-function? dst)
              ;; If the target of the Call is a label corresponding to an
              ;; external function in the runtime, we call that function.
-             (let* ([func (process-argument dst #:as 'external-function)]
-                    [sp (register-ref 'rsp)]
-                    [result (func flags registers memory time-tick sp)])
-               (cond
-                 [(void? result)
-                  (make-step-state)]
-                 [(not (integer? result))
-                  (raise-user-error 'step-Call
-                                    "result of call to external function '~a' not void? or integer?: ~v"
-                                    dst
-                                    result)]
-                 [(not (<= (integer-length result) word-size-bits))
-                  (raise-user-error 'step-Call
-                                    "integer result of call to external function '~a' too wide: ~v"
-                                    dst
-                                    result)]
-                 [else
-                  (make-step-state #:with-registers (register-set 'rax result))]))]
+             (let ([func (process-argument dst #:as 'external-function)]
+                   [sp (register-ref 'rsp)])
+               (let-values ([(result new-registers)
+                             (call-runtime-function func
+                                                    sp flags registers memory
+                                                    flag-ref
+                                                    register-ref register-set register-set/truncate
+                                                    memory-ref memory-set!)])
+                 (cond
+                   [(void? result)
+                    (make-step-state)]
+                   [(not (integer? result))
+                    (raise-user-error 'step-Call
+                                      "result of call to external function '~a' not void? or integer?: ~v"
+                                      dst
+                                      result)]
+                   [(not (<= (integer-length result) word-size-bits))
+                    (raise-user-error 'step-Call
+                                      "integer result of call to external function '~a' too wide: ~v"
+                                      dst
+                                      result)]
+                   [else
+                    (make-step-state #:with-registers (register-set new-registers 'rax result))])))]
             [(or (register? dst)
                  (hash-has-key? labels->addresses dst))
              ;; If the target of the Call is a register or internal label, we
