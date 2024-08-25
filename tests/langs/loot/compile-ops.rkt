@@ -1,8 +1,10 @@
 #lang racket
+
 (provide compile-op0 compile-op1 compile-op2 compile-op3 pad-stack assert-proc)
-(require "ast.rkt")
-(require "types.rkt")
-(require "../../../a86/instructions.rkt")
+
+(require "types.rkt"
+
+         "../../../a86/instructions.rkt")
 
 (define rax 'rax)
 (define eax 'eax) ; 32-bit load/store

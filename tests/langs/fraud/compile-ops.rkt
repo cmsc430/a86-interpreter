@@ -18,30 +18,8 @@
 (define (compile-op0 p)
   (match p
     ['void      (seq (Mov rax (value->bits (void))))]
-    ['read-byte (let ([end (gensym 'read_byte_end)]
-                      [done (gensym 'read_byte_done)])
-                  (seq pad-stack
-                       (Call 'read_byte)
-                       unpad-stack
-                       (Cmp rax -1)
-                       (Je end)
-                       (Sal rax int-shift)
-                       (Jmp done)
-                       (Label end)
-                       (Mov rax (value->bits eof))
-                       (Label done)))]
-    ['peek-byte (let ([end (gensym 'peek_byte_end)]
-                      [done (gensym 'peek_byte_done)])
-                  (seq pad-stack
-                       (Call 'peek_byte)
-                       unpad-stack
-                       (Cmp rax -1)
-                       (Je end)
-                       (Sal rax int-shift)
-                       (Jmp done)
-                       (Label end)
-                       (Mov rax (value->bits eof))
-                       (Label done)))]))
+    ['read-byte (seq pad-stack (Call 'read_byte) unpad-stack)]
+    ['peek-byte (seq pad-stack (Call 'peek_byte) unpad-stack)]))
 
 ;; Op1 -> Asm
 (define (compile-op1 p)
@@ -67,11 +45,9 @@
                          if-equal)]
     ['write-byte    (seq assert-byte
                          pad-stack
-                         (Sar rax int-shift)
                          (Mov rdi rax)
                          (Call 'write_byte)
-                         unpad-stack
-                         (Mov rax (value->bits (void))))]))
+                         unpad-stack)]))
 
 ;; Op2 -> Asm
 (define (compile-op2 p)
