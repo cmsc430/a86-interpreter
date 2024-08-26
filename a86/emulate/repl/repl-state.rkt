@@ -4,13 +4,12 @@
 
          current-repl-state
          current-repl-emulator
-         current-repl-show-mode
+         current-repl-show-proc
          current-repl-runtime
          current-repl-input-port
          current-repl-output-port
          current-repl-input-port->string
          current-repl-output-port->string
-         with-repl-show-mode
 
          current-repl-emulator-state
          current-repl-emulator-state-index
@@ -51,33 +50,29 @@
 (require "../../exn.rkt"
          "../emulator.rkt"
          "../memory.rkt"
-         "../runtime.rkt"
          "../state.rkt"
-         (submod "../emulator.rkt" private)
+         (submod "../emulator.rkt" private))
 
-         (for-syntax syntax/parse))
+(module+ private
+  (provide (struct-out repl-state)))
 
 (struct repl-state
   (emulator
-   [show-mode   #:mutable]
+   [show-proc   #:mutable]
    [runtime     #:mutable]
    [input-port  #:mutable]
    [output-port #:mutable]))
 
-(define (make-repl-state emulator
-                         [show-mode   'simple]
-                         [runtime     default-runtime]
-                         [input-port  #f]
-                         [output-port #f])
-  (repl-state emulator show-mode runtime input-port output-port))
+(define (make-repl-state emulator show-proc runtime input-port output-port)
+  (repl-state emulator show-proc runtime input-port output-port))
 
 (define current-repl-state (make-parameter #f))
 
 (define (current-repl-emulator)
   (repl-state-emulator (current-repl-state)))
 
-(define (current-repl-show-mode)
-  (repl-state-show-mode (current-repl-state)))
+(define (current-repl-show-proc)
+  (repl-state-show-proc (current-repl-state)))
 
 (define (current-repl-runtime)
   (repl-state-runtime (current-repl-state)))
@@ -106,15 +101,6 @@
 
 (define (current-repl-emulator-state)
   (emulator-state (current-repl-emulator)))
-
-(define-syntax (with-repl-show-mode stx)
-  (syntax-parse stx
-    [(_ new-mode body ...+)
-     #'(let ([old-mode (current-repl-show-mode)])
-         (dynamic-wind
-           (λ () (set-repl-state-show-mode! (current-repl-state) new-mode))
-           (λ () body ...)
-           (λ () (set-repl-state-show-mode! (current-repl-state) old-mode))))]))
 
 (define (current-repl-emulator-state-index)
   (Emulator-current-index (current-repl-emulator)))

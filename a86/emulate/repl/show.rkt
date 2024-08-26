@@ -1,12 +1,19 @@
 #lang racket
 
-(provide show/simple
+(provide show-modes
+         show/simple
          show/compact
-         show/complete)
+         show/complete
+
+         with-repl-show-mode)
 
 (require "../memory.rkt"
          "format.rkt"
-         "repl-state.rkt")
+         "repl-state.rkt"
+         (submod "repl-state.rkt" private)
+
+         (for-syntax racket/syntax
+                     syntax/parse))
 
 ;; [show] modes:
 ;;
@@ -82,6 +89,11 @@
 ;;
 ;; All settings can be configured so that they will be used each time the
 ;; program steps.
+
+(define show-modes
+  `([simple   ,show/simple]
+    [compact  ,show/compact]
+    [complete ,show/complete]))
 
 (define-show (show/simple) "~q. [~f*] ~i")
 
@@ -178,3 +190,20 @@
                   (list))
               (list ""))
       "\n"))))
+
+(define (set-repl-state-show-mode! repl-state show-mode)
+  (let ([show-proc (assoc show-mode show-modes)])
+    (unless show-proc
+      (raise-user-error 'repl "not a valid show mode: ~s" show-mode))
+    (set-repl-state-show-proc! repl-state show-proc)))
+
+(define-syntax (with-repl-show-mode stx)
+  (syntax-parse stx
+    [(_ new-mode body ...+)
+     #'(let ([old-mode-proc (current-repl-show-proc)])
+         (dynamic-wind
+           ;; NOTE: Uses symbolic mode name.
+           (λ () (set-repl-state-show-mode! (current-repl-state) new-mode))
+           (λ () body ...)
+           ;; NOTE: Uses proc directly.
+           (λ () (set-repl-state-show-proc! (current-repl-state) old-mode-proc))))]))

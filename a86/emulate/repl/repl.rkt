@@ -24,7 +24,7 @@
 (module* main #f
   (define input-file    (make-parameter #f))
   (define input-string  (make-parameter #f))
-  (define runtime       (make-parameter #f))
+  (define runtime       (make-parameter empty-runtime))
   (define show-mode     (make-parameter 'simple))
   (define catch-errors? (make-parameter #t))
   (command-line
@@ -36,26 +36,29 @@
                        "The string to use as input"
                        (input-string str)]
    [("-m" "--mode")    mode
+                       ;; TODO: These hints/documentation should be attached to
+                       ;; the definitions of the modes in [show.rkt].
                        ("The initial 'show' mode; one of:"
                         "  simple   --- the essentials in a single line"
                         "  compact  --- a few lines of useful info"
                         "  complete --- a lot of information")
                        (let ([mode (string->symbol mode)])
-                         (case mode
-                           [(simple compact complete)
-                            (show-mode mode)]
-                           [else (raise-user-error "not a valid mode: ~a" mode)]))]
+                         (unless (assoc mode show-modes)
+                           (raise-user-error "not a valid mode: ~s" mode)))]
    [("-r" "--runtime") rt
                        "The runtime to use"
-                       (runtime (name->runtime (string->symbol rt)))]
+                       (let ([runtime-name (string->symbol rt)])
+                         (unless (runtime-exists? runtime-name)
+                           (raise-user-error "not a valid runtime: ~s" runtime-name))
+                         (runtime (name->runtime runtime-name)))]
    [("-E" "--errors")  "Disables error suppression"
                        (catch-errors? #f)]
    #:args ()
-   (initialize-repl (input-file)
-                    (input-string)
-                    (or (runtime) default-runtime)
-                    (show-mode)
-                    (catch-errors?))))
+   (initialize-repl #:input-file    (input-file)
+                    #:input-string  (input-string)
+                    #:runtime       (runtime)
+                    #:mode          (show-mode)
+                    #:catch-errors? (catch-errors?))))
 
 (define (repl-loop)
   (with-handlers ([exn? (λ (e)
@@ -85,17 +88,7 @@
     [(not (current-repl-emulator))
      (displayln "Emulator not currently running.")]
     [(empty? xs)
-     (case (current-repl-show-mode)
-       [(simple)
-        (show/simple)]
-       [(compact)
-        (show/compact)]
-       [(complete)
-        (show/complete)]
-       [(#f)
-        (displayln "no 'show' mode set")]
-       [else
-        (displayln (format "unknown 'show' mode: ~a" (current-repl-show-mode)))])]
+     ((current-repl-show-proc))]
     [else
      (show-dispatch (first xs) (rest xs))]))
 
@@ -263,17 +256,38 @@
        (displayln (default-emulator-exn?-formatter/io e))
        (raise-a86-emulator-resume-error 'repl-emulator-exn?-handler)])))
 
-(define (initialize-repl [input-file    #f]
-                         [input-string  #f]
-                         [runtime       default-runtime]
-                         [show-mode     'simple]
-                         [catch-errors? #t])
-  (let ([instructions (and input-file
-                           (or (file-exists? input-file)
-                               (raise-a86-user-repl-error 'repl "input file does not exist: ~a" input-file))
-                           (read-instructions-from-file input-file))]
-        [in  (open-input-string (or input-string ""))]
-        [out (open-output-string)])
+(define (initialize-repl #:input-file    [input-file    #f]
+                         #:instructions  [instructions  #f]
+                         #:input-string  [input-string  #f]
+                         #:input-port    [input-port    #f]
+                         #:runtime       [runtime       empty-runtime]
+                         #:mode          [show-mode     'simple]
+                         #:catch-errors? [catch-errors? #t])
+  (when (and input-file instructions)
+    (raise-a86-user-repl-error 'initialize-repl "given both #:input-file and #:instructions; choose one"))
+  (when (not (or input-file instructions))
+    (raise-a86-user-repl-error 'initialize-repl "must give either #:input-file or #:instructions"))
+  (when (and input-string input-port)
+    (raise-a86-user-repl-error 'initialize-repl "given both #:input-string and #:input-port; choose one"))
+  (when input-file
+    (unless (file-exists? input-file)
+      (raise-a86-user-repl-error 'initialize-repl "input file does not exist: ~a" input-file))
+    (set! instructions (read-instructions-from-file input-file)))
+  (when (and runtime (symbol? runtime))
+    (unless (runtime-exists? runtime)
+      (raise-a86-user-repl-error 'initialize-repl "no runtime found with name: ~s" runtime))
+    (set! runtime (name->runtime runtime)))
+  (unless (runtime? runtime)
+    (raise-a86-user-repl-error 'initialize-repl "not a runtime: ~v" runtime))
+  (unless (symbol? show-mode)
+    (raise-a86-user-repl-error 'initialize-repl "show mode must be given as a symbol; got: ~v" show-mode))
+  (unless (assoc show-mode show-modes)
+    (raise-a86-user-repl-error 'initialize-repl "not a valid show mode: ~s" show-mode))
+
+  (let ([in (or input-port
+                (open-input-string (or input-string "")))]
+        [out (open-output-string)]
+        [show-proc (assoc show-mode show-modes)])
     (parameterize
         ([repl-catch-errors?             catch-errors?]
          [current-runtime-input-port     in]
@@ -281,7 +295,7 @@
          [current-emulator-exit-handler  repl-emulator-exit-handler]
          [current-emulator-exn?-handler  repl-emulator-exn?-handler]
          [current-emulator-raise-handler repl-emulator-raise-handler]
-         [current-emulator-before-thunk  (make-repl-emulator-before-thunk show-mode
+         [current-emulator-before-thunk  (make-repl-emulator-before-thunk show-proc
                                                                           runtime
                                                                           in
                                                                           out)]
