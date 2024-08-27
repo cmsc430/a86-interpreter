@@ -90,11 +90,6 @@
 ;; All settings can be configured so that they will be used each time the
 ;; program steps.
 
-(define show-modes
-  `([simple   ,show/simple]
-    [compact  ,show/compact]
-    [complete ,show/complete]))
-
 (define-show (show/simple) "~q. [~f*] ~i")
 
 (define-show (show/compact)
@@ -190,6 +185,11 @@
                   (list))
               (list ""))
       "\n"))))
+
+(define show-modes
+  `([simple   ,show/simple]
+    [compact  ,show/compact]
+    [complete ,show/complete]))
 
 (define (set-repl-state-show-mode! repl-state show-mode)
   (let ([show-proc (assoc show-mode show-modes)])
