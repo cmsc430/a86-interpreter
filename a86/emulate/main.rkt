@@ -1,50 +1,46 @@
 #lang racket
 
 (provide (contract-out
-          [char                      etype?]
-          [uchar                     etype?]
-          [int64                     etype?]
-          [int32                     etype?]
-          [uint64                    etype?]
-          [uint32                    etype?]
-          [emulator-flag-ref         (case-> (->                                flag?     boolean?)
-                                             (-> emulator?                      flag?     boolean?)
-                                             (-> emulator? nonnegative-integer? flag?     boolean?))]
-          [emulator-register-ref     (case-> (->                                register? a86-value?)
-                                             (-> emulator?                      register? a86-value?)
-                                             (-> emulator? nonnegative-integer? register? a86-value?))]
-          [emulator-memory-ref       (case-> (->                                address?  a86-value?)
-                                             (-> emulator?                      address?  a86-value?)
-                                             (-> emulator? nonnegative-integer? address?  a86-value?))]
-          [emulator-memory-ref/32    (case-> (->                                address?  a86-value/32-bit?)
-                                             (-> emulator?                      address?  a86-value/32-bit?)
-                                             (-> emulator? nonnegative-integer? address?  a86-value/32-bit?))]
-          [convert                   (-> integer? etype? result/c)]
-          [ptr-ref                   (->* [a86-value? etype?]
-                                          (nonnegative-integer?)
-                                          result/c)]
-          [step-count                (parameter/c integer?)]
-          [current-emulator          (parameter/c emulator?)]
-          [persist-current-emulator? (parameter/c boolean?)]
-          [run-emulator              (-> (listof instruction?) input-port? output-port? any/c)]
-          [asm-emulate               (->* [(or/c #f (listof instruction?))]
-                                          [#:before   (-> any/c)
-                                           #:during   (-> any/c)
-                                           #:after    (-> any/c)
-                                           #:on-exit  (-> any/c any/c)
-                                           #:on-exn   (-> exn?  any/c)
-                                           #:on-raise (-> any/c any/c)]
-                                          any/c)]
-          [asm-emulate/io            (->* [(or/c #f (listof instruction?))
-                                           input-port?]
-                                          [output-port?
-                                           #:before   (-> any/c)
-                                           #:during   (-> any/c)
-                                           #:after    (-> any/c)
-                                           #:on-exit  (-> any/c any/c)
-                                           #:on-exn   (-> exn?  any/c)
-                                           #:on-raise (-> any/c any/c)]
-                                          any/c)]))
+          [char                            etype?]
+          [uchar                           etype?]
+          [int64                           etype?]
+          [int32                           etype?]
+          [uint64                          etype?]
+          [uint32                          etype?]
+          [current-emulator-flag-ref       (-> flag? boolean?)]
+          [current-emulator-register-ref   (-> register? a86-value?)]
+          [current-emulator-memory-ref     (-> address? any/c)]
+          [current-emulator-memory-ref/32  (-> address? any/c)]
+          [previous-emulator-flag-ref      (-> flag? boolean?)]
+          [previous-emulator-register-ref  (-> register? a86-value?)]
+          [previous-emulator-memory-ref    (-> address? any/c)]
+          [previous-emulator-memory-ref/32 (-> address? any/c)]
+          [convert                         (-> integer? etype? result/c)]
+          [ptr-ref                         (->* [a86-value? etype?]
+                                                (nonnegative-integer?)
+                                                result/c)]
+          [step-count                      (parameter/c integer?)]
+          [current-emulator                (parameter/c emulator?)]
+          [persist-current-emulator?       (parameter/c boolean?)]
+          [run-emulator                    (-> (listof instruction?) input-port? output-port? any/c)]
+          [asm-emulate                     (->* [(or/c #f (listof instruction?))]
+                                                [#:before   (-> any/c)
+                                                 #:during   (-> any/c)
+                                                 #:after    (-> any/c)
+                                                 #:on-exit  (-> any/c any/c)
+                                                 #:on-exn   (-> exn?  any/c)
+                                                 #:on-raise (-> any/c any/c)]
+                                                any/c)]
+          [asm-emulate/io                  (->* [(or/c #f (listof instruction?))
+                                                 input-port?]
+                                                [output-port?
+                                                 #:before   (-> any/c)
+                                                 #:during   (-> any/c)
+                                                 #:after    (-> any/c)
+                                                 #:on-exit  (-> any/c any/c)
+                                                 #:on-exn   (-> exn?  any/c)
+                                                 #:on-raise (-> any/c any/c)]
+                                                any/c)]))
 
 (require "../ast.rkt"
          "../registers.rkt"

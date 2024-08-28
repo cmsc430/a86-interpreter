@@ -10,4 +10,4 @@
 (define (ptr-ref addr type [offset 0])
   (let ([adjusted-address (+ addr (* offset
                                      (/ (etype-bit-width type) 8)))])
-    (convert (emulator-memory-ref (current-emulator) adjusted-address) type)))
+    (convert (current-emulator-memory-ref adjusted-address) type)))

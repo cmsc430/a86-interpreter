@@ -45,28 +45,52 @@
 (provide current-emulator
          initialize-emulator
          emulator?
-         emulator-step!
-         emulator-multi-step!
-         emulator-step-back!
-         emulator->flags
-         emulator->registers
-         emulator-flag-ref
-         emulator-register-ref
-         emulator-memory-ref
-         emulator-memory-ref/32
-         emulator-memory-ref/16
-         emulator-memory-ref/8
-         emulator-memory-ref*
-         emulator-memory-ref*/32
-         emulator-memory-ref*/16
-         emulator-memory-ref*/8
+
+         current-emulator-step!
+         current-emulator-multi-step!
+         current-emulator-step-back!
+         current-emulator-address-readable?
+         current-emulator-address-writable?
+
+         current-emulator-state
+         current-emulator-state-index
+         current-emulator-instruction-pointer
+         current-emulator-instruction
+         current-emulator-flags
+         current-emulator-flag-ref
+         current-emulator-registers
+         current-emulator-register-ref
+         current-emulator-memory
+         current-emulator-memory-ref
+         current-emulator-memory-ref/32
+         current-emulator-memory-ref/16
+         current-emulator-memory-ref/8
+         current-emulator-memory-ref*
+         current-emulator-memory-ref*/32
+         current-emulator-memory-ref*/16
+         current-emulator-memory-ref*/8
+
+         previous-emulator-state
+         previous-emulator-state-index
+         previous-emulator-instruction-pointer
+         previous-emulator-instruction
+         previous-emulator-flags
+         previous-emulator-flag-ref
+         previous-emulator-registers
+         previous-emulator-register-ref
+         previous-emulator-memory-ref
+         previous-emulator-memory-ref/32
+         previous-emulator-memory-ref/16
+         previous-emulator-memory-ref/8
+         previous-emulator-memory-ref*
+         previous-emulator-memory-ref*/32
+         previous-emulator-memory-ref*/16
+         previous-emulator-memory-ref*/8
 
          (rename-out [max-step-count emulator-step-count]))
 
-(require "../debug.rkt"
-         "../exn.rkt"
+(require "../exn.rkt"
          "../registers.rkt"
-         "../utility.rkt"
 
          "memory.rkt"
          "program.rkt"
@@ -93,9 +117,7 @@
 
 (define (initialize-emulator instructions)
   (let* ([prog   (make-program instructions)]
-         [_      (debug "program initialized")]
          [mem    (make-memory-from-program prog)]
-         [_      (debug "memory initialized")]
          ;; We add a "return address" at the top of the stack, used for
          ;; signaling program termination.
          [_      (begin
@@ -104,11 +126,8 @@
                                 (address-range-hi mem stack)
                                 0
                                 end-of-program-signal))]
-         [_      (debug "initial memory adjusted for end-of-program signal")]
          [ip     (address-range-hi mem text)]
-         [_      (debug "initial instruction pointer set: ~v" ip)]
          [addrs  (compute-label-addresses prog ip)]
-         [_      (debug "label addresses computed")]
          [state  (StepState 0
                             ip
                             fresh-flags
@@ -118,7 +137,6 @@
                             (list)
                             (list)
                             (list))]
-         [_      (debug "first state initialized")]
          [states (make-vector states-size-increment #f)])
     (vector-set! states 0 state)
     (Emulator states 0 mem addrs)))
@@ -127,26 +145,32 @@
   (match emulator
     [(Emulator states index _ _)
      (match step
-       [(? exact-nonnegative-integer?) step]
-       [(? exact-integer?)
+       ;; If [step] is not negative, it should correspond directly to a state
+       ;; index. Check that it isn't too big.
+       [(? exact-nonnegative-integer?)
+        (if (>= step (vector-length states))
+            (raise-a86-error who "step greater than number of states: ~v" step)
+            step)]
+       ;; If [step] is negative, it's meant to be relative to the current index.
+       ;; Check that the resulting index isn't negative.
+       [(? exact-integer?)  ;; NOTE: Always negative.
         (let ([new-index (+ index step)])
-          (cond
-            [(negative? new-index)
-             (raise-a86-error who "negative state index: ~v" new-index)]
-            [(>= new-index (vector-length states))
-             (raise-a86-error who "too-great state index: ~v" new-index)]
-            [else
-             new-index]))]
+          (if (negative? new-index)
+              (raise-a86-error who "relative step results in invalid state: ~v" new-index)
+              new-index))]
+       ;; We allow [step] to be [#f] as a shorthand for retrieving the current
+       ;; state index.
        [#f index]
+       ;; Anything else is problematic.
        [_ (raise-a86-error who "invalid step: ~v" step)])]))
 
-(define (emulator-state [emulator (current-emulator)] [step #f])
+(define (emulator-state emulator [step #f])
   (unless emulator
     (error 'emulator-state "no emulator set!"))
   (vector-ref (Emulator-states emulator)
               (normalize-step-to-state-index 'emulator-state emulator step)))
 
-(define (emulator-step! [emulator (current-emulator)])
+(define (emulator-step! emulator)
   (match emulator
     [(Emulator states old-index memory labels->addresses)
      ;; TODO: Add new [exn?] for attempting to take a step when no steps can be
@@ -177,68 +201,27 @@
 
 ;; Steps the emulator until either the new state is identical to the old state
 ;; or [exn:fail:a86:emulator:out-of-steps] is raised, then returns politely.
-(define (emulator-multi-step! [emulator (current-emulator)])
-  (debug "labels->addresses:")
-  (for ([(label address) (in-hash (Emulator-labels->addresses emulator))])
-    (debug "  ~v\t~a" label (format-word address 'hex)))
-  (debug "text:")
-  (debug-memory-section (Emulator-memory emulator) text)
-  (debug "")
-  (parameterize ([trace-registers (list 'rax 'rsp)])
-    (let recurse ([last-state (emulator-state emulator)])
-      (debug-memory-section (Emulator-memory emulator) stack)
-      (debug-flags (emulator->flags emulator))
-      (debug-registers (emulator->registers emulator))
-      (emulator-step! emulator)
-      (let ([new-state (emulator-state emulator)])
-        (unless (eq? new-state last-state)
-          (recurse new-state))))
-    (debug "\n\n")))
+(define (emulator-multi-step! emulator)
+  (let recurse ([last-state (emulator-state emulator)])
+    (emulator-step! emulator)
+    (let ([new-state (emulator-state emulator)])
+      (unless (eq? new-state last-state)
+        (recurse new-state)))))
 
 ;; NOTE: Cannot step backwards past the first state.
 ;; TODO: Should this raise an exception instead?
-(define (emulator-step-back! [emulator (current-emulator)])
+(define (emulator-step-back! emulator)
   (set-Emulator-current-index!
    emulator
    (max (sub1 (Emulator-current-index emulator))
         0)))
 
-(define (emulator->flags [emulator (current-emulator)] [step #f])
-  (StepState-flags (emulator-state emulator step)))
-
-(define (emulator->registers [emulator (current-emulator)] [step #f])
-  (StepState-registers (emulator-state emulator step)))
-
-(define emulator-flag-ref
-  (case-lambda
-    [(flag)
-     (emulator-flag-ref (current-emulator) flag)]
-    [(emulator flag)
-     (hash-ref (emulator->flags emulator) flag)]
-    [(emulator step flag)
-     (hash-ref (emulator->flags emulator step) flag)]))
-
-(define emulator-register-ref
-  (case-lambda
-    [(register)
-     (emulator-register-ref (current-emulator) register)]
-    [(emulator register)
-     (register-ref (emulator->registers emulator) register)]
-    [(emulator step register)
-     (register-ref (emulator->registers emulator step) register)]))
-
 (define-syntax (define-emulator-memory-ref stx)
   (syntax-parse stx
     [(_ name:id byte-count:integer)
-     #'(define name
-         (case-lambda
-           [(address)
-            (name (current-emulator) #f address)]
-           [(emulator address)
-            (name emulator #f address)]
-           [(emulator step address)
-            (let ([tick (StepState-time-tick (emulator-state emulator step))])
-              (memory-ref (Emulator-memory emulator) address tick byte-count))]))]))
+     #'(define (name emulator address [step #f])
+         (let ([tick (StepState-time-tick (emulator-state emulator step))])
+           (memory-ref (Emulator-memory emulator) address tick byte-count)))]))
 
 (define-emulator-memory-ref emulator-memory-ref    8)
 (define-emulator-memory-ref emulator-memory-ref/32 4)
@@ -248,17 +231,160 @@
 (define-syntax (define-emulator-memory-ref* stx)
   (syntax-parse stx
     [(_ name:id byte-count:integer)
-     #'(define name
-         (case-lambda
-           [(address n)
-            (name (current-emulator) #f address n)]
-           [(emulator address n)
-            (name emulator #f address n)]
-           [(emulator step address n)
-            (let ([tick (StepState-time-tick (emulator-state emulator step))])
-              (memory-ref* (Emulator-memory emulator) address n tick byte-count))]))]))
+     #'(define (name emulator address n [step #f])
+         (let ([tick (StepState-time-tick (emulator-state emulator step))])
+           (memory-ref* (Emulator-memory emulator) address n tick byte-count)))]))
 
 (define-emulator-memory-ref* emulator-memory-ref*    8)
 (define-emulator-memory-ref* emulator-memory-ref*/32 4)
 (define-emulator-memory-ref* emulator-memory-ref*/16 2)
 (define-emulator-memory-ref* emulator-memory-ref*/8  1)
+
+;; TODO: Add functionality to test readability based on [step] (consider
+;; dynamic memory allocation).
+(define (emulator-address-readable? emulator address [step #f])
+  (address-readable? (Emulator-memory emulator) address))
+
+;; TODO: Add functionality to test writability based on [step] (consider
+;; dynamic memory allocation).
+(define (emulator-address-writable? emulator address [step #f])
+  (address-writable? (Emulator-memory emulator) address))
+
+(define (emulator-state->flags state)
+  (StepState-flags state))
+
+(define (emulator-state->registers state)
+  (StepState-registers state))
+
+(define (emulator-state-flag-ref state flag)
+  (hash-ref (emulator-state->flags state) flag))
+
+(define (emulator-state-register-ref state register)
+  (register-ref (emulator-state->registers state) register))
+
+(define (emulator-state->instruction-pointer state)
+  (StepState-ip state))
+
+
+;; Convenience functions for accessing the current state in the emulator.
+
+(define (current-emulator-step!)
+  (emulator-step! (current-emulator)))
+
+(define (current-emulator-multi-step!)
+  (emulator-multi-step! (current-emulator)))
+
+(define (current-emulator-step-back!)
+  (emulator-step-back! (current-emulator)))
+
+(define (current-emulator-address-readable? address)
+  (emulator-address-readable? (current-emulator) address))
+
+(define (current-emulator-address-writable? address)
+  (emulator-address-writable? (current-emulator) address))
+
+(define (current-emulator-state)
+  (emulator-state (current-emulator)))
+
+(define (current-emulator-state-index)
+  (normalize-step-to-state-index 'current-emulator-state-index (current-emulator) #f))
+
+(define (current-emulator-instruction-pointer)
+  (emulator-state->instruction-pointer (current-emulator-state)))
+
+(define (current-emulator-instruction)
+  (emulator-memory-ref (current-emulator) (emulator-state->instruction-pointer (current-emulator-state))))
+
+(define (current-emulator-flags)
+  (emulator-state->flags (current-emulator-state)))
+
+(define (current-emulator-flag-ref flag)
+  (emulator-state-flag-ref (current-emulator-state) flag))
+
+(define (current-emulator-registers)
+  (emulator-state->registers (current-emulator-state)))
+
+(define (current-emulator-register-ref register)
+  (emulator-state-register-ref (current-emulator-state) register))
+
+(define (current-emulator-memory)
+  (Emulator-memory (current-emulator)))
+
+(define (current-emulator-memory-ref address)
+  (emulator-memory-ref (current-emulator) address))
+
+(define (current-emulator-memory-ref/32 address)
+  (emulator-memory-ref/32 (current-emulator) address))
+
+(define (current-emulator-memory-ref/16 address)
+  (emulator-memory-ref/16 (current-emulator) address))
+
+(define (current-emulator-memory-ref/8 address)
+  (emulator-memory-ref/8 (current-emulator address)))
+
+(define (current-emulator-memory-ref* address n)
+  (emulator-memory-ref* (current-emulator) address n))
+
+(define (current-emulator-memory-ref*/32 address n)
+  (emulator-memory-ref*/32 (current-emulator) address n))
+
+(define (current-emulator-memory-ref*/16 address n)
+  (emulator-memory-ref*/16 (current-emulator) address n))
+
+(define (current-emulator-memory-ref*/8 address n)
+  (emulator-memory-ref*/8 (current-emulator) address n))
+
+
+;; Convenience functions for accessing the previous state in the emulator.
+
+(define (previous-emulator-state)
+  (emulator-state (current-emulator) -1))
+
+(define (previous-emulator-state-index)
+  (normalize-step-to-state-index 'previous-emulator-state-index (current-emulator) -1))
+
+(define (previous-emulator-instruction-pointer)
+  (emulator-state->instruction-pointer (previous-emulator-state)))
+
+(define (previous-emulator-instruction)
+  (emulator-memory-ref (current-emulator) (emulator-state->instruction-pointer (previous-emulator-state)) -1))
+
+(define (previous-emulator-flags)
+  (with-handlers ([exn:fail:a86? (λ _ #f)])
+    (emulator-state->flags (previous-emulator-state))))
+
+(define (previous-emulator-flag-ref flag)
+  (with-handlers ([exn:fail:a86? (λ _ 'no-result)])
+    (emulator-state-flag-ref (previous-emulator-state) flag)))
+
+(define (previous-emulator-registers)
+  (with-handlers ([exn:fail:a86? (λ _ #f)])
+    (emulator-state->registers (previous-emulator-state))))
+
+(define (previous-emulator-register-ref register)
+  (with-handlers ([exn:fail:a86? (λ _ #f)])
+    (emulator-state-register-ref (previous-emulator-state) register)))
+
+(define (previous-emulator-memory-ref address)
+  (emulator-memory-ref (current-emulator) address -1))
+
+(define (previous-emulator-memory-ref/32 address)
+  (emulator-memory-ref/32 (current-emulator) address -1))
+
+(define (previous-emulator-memory-ref/16 address)
+  (emulator-memory-ref/16 (current-emulator) address -1))
+
+(define (previous-emulator-memory-ref/8 address)
+  (emulator-memory-ref/8 (current-emulator) address -1))
+
+(define (previous-emulator-memory-ref* address n)
+  (emulator-memory-ref* (current-emulator) address n -1))
+
+(define (previous-emulator-memory-ref*/32 address n)
+  (emulator-memory-ref*/32 (current-emulator) address n -1))
+
+(define (previous-emulator-memory-ref*/16 address n)
+  (emulator-memory-ref*/16 (current-emulator) address n -1))
+
+(define (previous-emulator-memory-ref*/8 address n)
+  (emulator-memory-ref*/8 (current-emulator) address n -1))

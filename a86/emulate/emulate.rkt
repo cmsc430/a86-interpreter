@@ -33,11 +33,12 @@
          asm-emulate
          asm-emulate/io)
 
-(require "emulator.rkt"
+(require "../utility.rkt"
+
+         "emulator.rkt"
          "exn.rkt"
          "runtime.rkt"
-         "stacktrace.rkt"
-         "../utility.rkt")
+         "stacktrace.rkt")
 
 ;; Whether to persist the [current-emulator] beyond the scope of [run-emulator].
 (define persist-current-emulator? (make-parameter #f))
@@ -92,8 +93,8 @@
 
 ;; By default, the emulator is run until either the program halts or it takes
 ;; [emulator-step-count] steps.
-(define default-emulator-body-thunk    (λ () (emulator-multi-step!)))
-(define default-emulator-body-thunk/io (λ () (emulator-multi-step!)))
+(define default-emulator-body-thunk    (λ () (current-emulator-multi-step!)))
+(define default-emulator-body-thunk/io (λ () (current-emulator-multi-step!)))
 
 ;; Both of the default after-thunks retrieve the value of [rax] and decode it to
 ;; a signed integer form, since that's what happens in our existing C-based
@@ -105,13 +106,13 @@
 ;; instead.
 (define default-emulator-after-thunk
   (λ ()
-    (let ([r (emulator-register-ref 'rax)])
+    (let ([r (current-emulator-register-ref 'rax)])
       (if (a86-value? r)
           (a86-value->signed-integer r)
           r))))
 (define default-emulator-after-thunk/io
   (λ ()
-    (let ([r (emulator-register-ref 'rax)]
+    (let ([r (current-emulator-register-ref 'rax)]
           [p (current-runtime-output-port)])
       (cons (if (a86-value? r)
                 (a86-value->signed-integer r)
