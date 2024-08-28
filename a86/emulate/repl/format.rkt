@@ -29,6 +29,9 @@
 (require "../../instructions.rkt"
          "../../registers.rkt"
          "../../utility.rkt"
+
+         "../emulator.rkt"
+
          "exn.rkt"
          "repl-state.rkt"
 
@@ -193,23 +196,23 @@
 ;;                (current-repl-instruction))
 (define-format-for-show format/repl
   ;; Current flag value, where lowercase represents unset and uppercase is set.
-  [f current-repl-flag-ref
+  [f current-emulator-flag-ref
      (λ (fv f) (let* ([f-str (~a f)]
                       [f-chr (substring f-str 0 1)])
                  (if fv
                      (string-upcase   f-chr)
                      (string-downcase f-chr))))]
   ;; Current flag value, given as either [#t] or [#f].
-  [f! current-repl-flag-ref
+  [f! current-emulator-flag-ref
       (λ (fv _) (~a fv))]
   ;; All current flag values.
-  [f* (λ () (map current-repl-flag-ref flag-names))
+  [f* (λ () (map current-emulator-flag-ref flag-names))
       (λ (fvs) (string-append* (map (current-escape-formatter/~f) fvs flag-names)))]
   ;; Current register value.
-  [r current-repl-register-ref
+  [r current-emulator-register-ref
      (λ (rv _) (~a rv))]
   ;; Multiple current register values.
-  [r* (λ (rs) (map current-repl-register-ref rs))
+  [r* (λ (rs) (map current-emulator-register-ref rs))
       (λ (rvs _) (string-join (map (current-escape-formatter/~r) rvs) ", "))]
   ;; Current value in memory at register address. The argument can be a register
   ;; or a list of a register with an integer, in which case the integer is
@@ -218,15 +221,15 @@
         (match r+o
           [(or (? register? r)
                (list (? register? r)))
-           (current-repl-memory-ref (current-repl-register-ref r))]
+           (current-emulator-memory-ref (current-emulator-register-ref r))]
           [(list (? register? r) (? exact-integer? o))
-           (current-repl-memory-ref (+ o (current-repl-register-ref r)))]))
+           (current-emulator-memory-ref (+ o (current-emulator-register-ref r)))]))
       (λ (mv x) ((current-escape-formatter/~m) mv x))]
   ;; Current instruction.
-  [i current-repl-instruction
+  [i current-emulator-instruction
      ~v]
   ;; Current value at a memory address.
-  [m current-repl-memory-ref
+  [m current-emulator-memory-ref
      (λ (mv _)
        (if (address? mv)
            (~a "0x"
@@ -240,7 +243,7 @@
                #:width (current-memory-value-width)
                #:align 'right)))]
   ;; Current step index.
-  [q current-repl-emulator-state-index]
+  [q current-emulator-state-index]
   ;; Current remaining input in the input string.
   [<< (λ ()
         (or (current-repl-input-port->string)
@@ -263,19 +266,19 @@
         (or (current-repl-output-port->string)
             ""))]
   ;; Previous flag value, where lowercase represents unset and uppercase is set.
-  [F previous-repl-flag-ref
+  [F previous-emulator-flag-ref
      (λ (fv _) ((current-escape-formatter/~f) fv))]
   ;; Previous flag value, given as either [#t] or [#f].
-  [F! previous-repl-flag-ref
+  [F! previous-emulator-flag-ref
       (λ (fv _) ((current-escape-formatter/~f!) fv))]
   ;; All previous flag values.
-  [F* (λ () (map previous-repl-flag-ref flag-names))
+  [F* (λ () (map previous-emulator-flag-ref flag-names))
       (λ (fvs) ((current-escape-formatter/~f*) fvs))]
   ;; Previous register value.
-  [R previous-repl-flag-ref
+  [R previous-emulator-flag-ref
      (λ (rv _) ((current-escape-formatter/~r) rv))]
   ;; Multiple previous register values.
-  [R* (λ (rs) (map previous-repl-register-ref rs))
+  [R* (λ (rs) (map previous-emulator-register-ref rs))
       (λ (rvs _) ((current-escape-formatter/~r*) rvs))]
   ;; Value in memory at register address in previous step of interpreter. The
   ;; argument can be a register or a list of a register with an integer, in
@@ -284,18 +287,18 @@
         (match r+o
           [(or (? register? r)
                (list (? register? r)))
-           (previous-repl-memory-ref (previous-repl-register-ref r))]
+           (previous-emulator-memory-ref (previous-emulator-register-ref r))]
           [(list (? register? r) (? exact-integer? o))
-           (previous-repl-memory-ref (+ o (previous-repl-register-ref r)))]))
+           (previous-emulator-memory-ref (+ o (previous-emulator-register-ref r)))]))
       (λ (mv x) ((current-escape-formatter/~r&) mv x))]
   ;; Previous instruction.
-  [I previous-repl-instruction
+  [I previous-emulator-instruction
      (λ (iv) ((current-escape-formatter/~i) iv))]
   ;; Previous value at a memory address.
-  [M previous-repl-memory-ref
+  [M previous-emulator-memory-ref
      (λ (mv _) ((current-escape-formatter/~m) mv))]
   ;; Previous step index.
-  [Q previous-repl-emulator-state-index])
+  [Q previous-emulator-state-index])
 
 (define-syntax (define-show stx)
   (define-syntax-class arg-list
@@ -355,7 +358,7 @@
 ;; to add padding to both ends to center the [base-address] in the range.
 (define (retrieve-memory-values number-of-values
                                 base-address
-                                #:filter-address   [filter-address   current-repl-address-readable?]
+                                #:filter-address   [filter-address   current-emulator-address-readable?]
                                 #:filter-value     [filter-value     values]
                                 #:align            [align            'center]
                                 #:base-label       [base-label       'base]
@@ -369,7 +372,7 @@
   (unless (positive-integer? number-of-values)
     (raise-argument-error 'retrieve-memory-values "positive-integer?" number-of-values))
   (unless (and (address? base-address)
-               (current-repl-address-readable? base-address))
+               (current-emulator-address-readable? base-address))
     (raise-argument-error 'retrieve-memory-values "readable address?" base-address))
   (unless (and (procedure? filter-address)
                (procedure-arity-includes? filter-address 1))
@@ -387,7 +390,7 @@
                              (and (<= include-address (word-aligned-offset base-address (sub1  number-of-values)))
                                   (>= include-address (word-aligned-offset base-address (-     number-of-values))))
                              (filter-address include-address)
-                             (filter-value (current-repl-memory-ref include-address))
+                             (filter-value (current-emulator-memory-ref include-address))
                              include-address))
 
   ;; Build the window that includes the [include-address], keeping track of the
@@ -422,7 +425,7 @@
                             base-address
                             0
                             0
-                            (list (list 'base (current-repl-memory-ref base-address)))
+                            (list (list 'base (current-emulator-memory-ref base-address)))
                             '())]
                    [(> base-address include-address)
                     (let ([offset (- (abs balance))])
@@ -431,14 +434,14 @@
                               0
                               offset
                               '()
-                              (current-repl-memory-ref* base-address (sub1 offset))))]
+                              (current-emulator-memory-ref* base-address (sub1 offset))))]
                    [(< base-address include-address)
                     (let ([offset (abs balance)])
                       (values include-address
                               base-address
                               offset
                               0
-                              (reverse (current-repl-memory-ref* base-address (add1 offset)))
+                              (reverse (current-emulator-memory-ref* base-address (add1 offset)))
                               '()))])]
                 [(upper-values lower-values)
                  (let ([correct-value (match-lambda
@@ -456,7 +459,7 @@
                                                 v)]
                                            [else v])])])
                    (values (if (zero? balance)
-                               (list (list base-label (current-repl-memory-ref base-address)))
+                               (list (list base-label (current-emulator-memory-ref base-address)))
                                (map correct-value upper-values))
                            (map correct-value lower-values)))])
     ;; Now that our initial window including the [base-address] and
@@ -490,8 +493,8 @@
                  [next-lo-address     (and next-lo-offset (word-aligned-offset base-address next-lo-offset))]
                  [next-hi-address-ok? (and next-hi-address (filter-address next-hi-address))]
                  [next-lo-address-ok? (and next-lo-address (filter-address next-lo-address))]
-                 [next-hi-value       (and next-hi-address-ok? (current-repl-memory-ref next-hi-address))]
-                 [next-lo-value       (and next-lo-address-ok? (current-repl-memory-ref next-lo-address))]
+                 [next-hi-value       (and next-hi-address-ok? (current-emulator-memory-ref next-hi-address))]
+                 [next-lo-value       (and next-lo-address-ok? (current-emulator-memory-ref next-lo-address))]
                  [next-hi-value-ok?   (and next-hi-value (filter-value next-hi-value))]
                  [next-lo-value-ok?   (and next-lo-value (filter-value next-lo-value))]
                  [expand-upwards      (λ ()
@@ -641,7 +644,7 @@
 (define (format-memory number-of-values
                        base-address
                        [render-proc ~v]
-                       [filter-proc current-repl-address-readable?]
+                       [filter-proc current-emulator-address-readable?]
                        #:align         [align           'bottom]
                        #:label         [base-label      #f]
                        #:including     [include-address #f]
@@ -713,8 +716,8 @@
   ;; instruction. If the gap between these is too wide, a break will appear in
   ;; the middle denoted by ['break] instead of an address-instruction pair.
   (define (select-instructions/current-and-previous)
-    (let* ([prev-instr-ptr (previous-repl-instruction-pointer)]
-           [curr-instr-ptr (current-repl-instruction-pointer)]
+    (let* ([prev-instr-ptr (previous-emulator-instruction-pointer)]
+           [curr-instr-ptr (current-emulator-instruction-pointer)]
            [word-diff (/ (abs (- prev-instr-ptr curr-instr-ptr)) word-size-bytes)])
       ;; Determine whether we need two separate instruction regions.
       (if (> word-diff number-of-lines)
@@ -745,7 +748,7 @@
   ;; Selects [n] instructions that will include the current instruction as
   ;; centered as possible.
   (define (select-instructions/current n)
-    (let ([curr-instr-ptr (current-repl-instruction-pointer)])
+    (let ([curr-instr-ptr (current-emulator-instruction-pointer)])
       (retrieve-memory-values n curr-instr-ptr
                               #:filter-value instruction?
                               #:base-label   'curr)))
@@ -753,7 +756,7 @@
   ;; If we're meant to show the previous instruction AND the previous
   ;; instruction is actually available, do so. Otherwise, show only the current
   ;; instruction.
-  (let* ([instrs (if (and show-prev? (previous-repl-instruction-pointer))
+  (let* ([instrs (if (and show-prev? (previous-emulator-instruction-pointer))
                      (select-instructions/current-and-previous)
                      (select-instructions/current number-of-lines))]
          [indicator-width (max (string-length (or prev-indicator 0))

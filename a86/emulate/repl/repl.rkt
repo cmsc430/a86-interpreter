@@ -5,6 +5,7 @@
          "../../utility.rkt"
 
          "../emulate.rkt"
+         "../emulator.rkt"
 
          "commands.rkt"
          "exn.rkt"
@@ -48,7 +49,7 @@
 
 (define (show-state . xs)
   (cond
-    [(not (current-repl-emulator))
+    [(not (current-emulator))
      (displayln "Emulator not currently running.")]
     [(empty? xs)
      ((current-repl-show-proc))]
@@ -71,17 +72,17 @@
       [(s st stack)
        (match xs
          [(list (? positive-integer? n))
-          (displayln (format-memory n (current-repl-register-ref 'rsp)))]
+          (displayln (format-memory n (current-emulator-register-ref 'rsp)))]
          [(list (? number? n))
           (abort (displayln "numerical argument to 'show ~a' must be a positive integer; got ~a" x n))]
          [_
-          (displayln (format-memory 4 (current-repl-register-ref 'rsp)))])]
+          (displayln (format-memory 4 (current-emulator-register-ref 'rsp)))])]
       ;; Display part of memory.
       [(m mem memory)
        (match xs
          [(cons base xs)
           (let ([base-address (cond
-                                [(register? base) (current-repl-register-ref base)]
+                                [(register? base) (current-emulator-register-ref base)]
                                 [(address?  base) base]
                                 [else
                                  (abort (displayln "base argument to 'show ~a' must be a register or address; got ~a"
@@ -152,18 +153,18 @@
 
 (define (step-next [steps 1])
   (for ([_ (in-range steps)])
-    (repl-next-step!)
+    (current-emulator-step!)
     (show-state)))
 
 (define (step-prev [steps 1])
   (for ([_ (in-range steps)])
-    (repl-prev-step!)
+    (current-emulator-step-back!)
     (show-state)))
 
 (define (run-to-end)
-  (let recurse ([prev-state (current-repl-emulator-state)])
-    (repl-next-step!)
-    (let ([curr-state (current-repl-emulator-state)])
+  (let recurse ([prev-state (current-emulator-state)])
+    (current-emulator-step!)
+    (let ([curr-state (current-emulator-state)])
       (with-repl-show-mode 'simple (show-state))
       (if (eq? prev-state curr-state)
           (with-repl-show-mode 'compact

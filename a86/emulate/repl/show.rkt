@@ -7,13 +7,15 @@
 
          with-repl-show-mode)
 
-(require "../memory.rkt"
+(require "../emulator.rkt"
+         "../memory.rkt"
+
          "format.rkt"
          "repl-state.rkt"
+
          (submod "repl-state.rkt" private)
 
-         (for-syntax racket/syntax
-                     syntax/parse))
+         (for-syntax syntax/parse))
 
 ;; [show] modes:
 ;;
@@ -95,7 +97,7 @@
 (define-show (show/compact)
   ;; When we're not at the beginning state, show the previous
   ;; state as well.
-  [(positive-integer? (current-repl-emulator-state-index))
+  [(positive-integer? (current-emulator-state-index))
    "~Q. [~F*] ~I"]
   ;; Always show the current state.
   "~q. [~f*] ~i"
@@ -150,11 +152,11 @@
          [is-lines (string-split is-str "\n")]
          #;[max-is-line-len (apply max (map string-length is-lines))]
          [max-is-line-len (current-instruction-display-width)]
-         [rsp-base (current-repl-register-ref 'rsp)]
+         [rsp-base (current-emulator-register-ref 'rsp)]
          [st-str (format-memory (quotient (current-instruction-display-count) 2)
                                 rsp-base
                                 #:label "rsp"
-                                #:including (address-range-hi (current-repl-memory) stack)
+                                #:including (address-range-hi (current-emulator-memory) stack)
                                 #:include-label "stack top")]
          [st-lines (string-split st-str "\n")]
          ;; TODO: It'd be nice to generalize this and make it more configurable.
@@ -192,10 +194,10 @@
     [complete ,show/complete]))
 
 (define (set-repl-state-show-mode! repl-state show-mode)
-  (let ([show-proc (assoc show-mode show-modes)])
-    (unless show-proc
+  (let ([show-proc-pair (assoc show-mode show-modes)])
+    (unless show-proc-pair
       (raise-user-error 'repl "not a valid show mode: ~s" show-mode))
-    (set-repl-state-show-proc! repl-state show-proc)))
+    (set-repl-state-show-proc! repl-state (cadr show-proc-pair))))
 
 (define-syntax (with-repl-show-mode stx)
   (syntax-parse stx
