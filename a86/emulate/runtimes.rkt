@@ -148,7 +148,7 @@
                 (arithmetic-shift (arithmetic-shift i (- (integer-length ptr-mask)))
                                   (integer-length ptr-mask))]
                [(heap-ref a)
-                (ptr-ref (untag a int64))]
+                (ptr-ref (untag a) int64)]
                [(char-ref a o)
                 (integer->char (ptr-ref (untag a) uint32 o))]
                [#:uses-input
@@ -214,7 +214,7 @@
                 (arithmetic-shift (arithmetic-shift i (- (integer-length ptr-mask)))
                                   (integer-length ptr-mask))]
                [(heap-ref a)
-                (ptr-ref (untag a int64))]
+                (ptr-ref (untag a) int64)]
                [(char-ref a o)
                 (integer->char (ptr-ref (untag a) uint32 o))]
                [#:uses-input
@@ -287,7 +287,7 @@
                 (arithmetic-shift (arithmetic-shift i (- (integer-length ptr-mask)))
                                   (integer-length ptr-mask))]
                [(heap-ref a)
-                (ptr-ref (untag a int64))]
+                (ptr-ref (untag a) int64)]
                [(char-ref a o)
                 (integer->char (ptr-ref (untag a) uint32 o))]
                [#:uses-input
@@ -371,7 +371,7 @@
                 (arithmetic-shift (arithmetic-shift i (- (integer-length ptr-mask)))
                                   (integer-length ptr-mask))]
                [(heap-ref a)
-                (ptr-ref (untag a int64))]
+                (ptr-ref (untag a) int64)]
                [(char-ref a o)
                 (integer->char (ptr-ref (untag a) uint32 o))]
                [(calloc num size)
