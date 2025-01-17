@@ -1,53 +1,22 @@
 #lang racket
 
-;; NOTE: As I originally set out to implement this abstraction, I found myself
-;; revising the internal representation of states many times. This is due to a
-;; number of things, but primarily I wanted to plan ahead for some features that
-;; I intend for the emulator to support, such as being able to arbitrarily
-;; change register or memory values at runtime and then resuming execution in
-;; either direction.
-;;
-;; The regular forward/backward stepping functionality is easy to accommodate:
-;; forward steps can be run as needed, and backward steps can retrieve past
-;; states and re-load them as the "current" state.
-;;
-;; But if we allow arbitrary changes of values... things become complicated. I
-;; had originally planned to set up "Executions" --- devices that track a
-;; related sequence of states, and then an Emulator would contain all its
-;; Executions (between which the user may toggle as needed, or else fork a new
-;; one by committing new value changes).
-;;
-;; However, I eventually realized that the current implementation of the machine
-;; simply will not support this functionality. Because memory is handled as a
-;; separate state-containing device, I would need to track individual memory
-;; cells from the Execution. Not only is this overly complex in itself, but if
-;; you factor in the existing complexity of the different modes of memory update
-;; it becomes downright absurd.
-;;
-;; TODO: I think I have an idea for how to resolve this all in the future, but I
-;; won't implement it right now.
-;;
-;; The idea is to take inspiration from spreadsheets. Instead of writing down
-;; all the past memory values for a given address and saving all the past
-;; values for registers in the [StepState]s, I think a system can be set up to
-;; compute the values on-demand via functions. This will require an overhaul of
-;; both the state system as well as the memory system, such that all "memory
-;; locations" (including registers) are aware of other areas of the system that
-;; they touch. Either that, or the dependents can be made lazy with the
-;; expectation that they have to fetch up-to-date values when needed. (I think
-;; this sounds better, now that I write it out, but I'll think on it.)
-;;
-;; Since this is beyond the scope of the current system, I think I'll stick to
-;; just steppable debugging without supporting live value changes. It will be a
-;; system for understanding rather than experimentation. But I would very much
-;; like to rewrite it all to handle this additional functionality at some point.
+(provide emulator?
 
-(provide current-emulator
-         initialize-emulator
-         emulator?
+         add-context!
+         initialize-context!
+         switch-context!
+         add-context-and-switch!
+         initialize-context-and-switch!
+
+         max-step-count
+
+         current-context-name
+         current-context-emulator
+         current-context-runtime
+         current-context-input-port
+         current-context-output-port
 
          current-emulator-step!
-         current-emulator-multi-step!
          current-emulator-step-back!
          current-emulator-address-readable?
          current-emulator-address-writable?
@@ -85,15 +54,14 @@
          previous-emulator-memory-ref*
          previous-emulator-memory-ref*/32
          previous-emulator-memory-ref*/16
-         previous-emulator-memory-ref*/8
-
-         (rename-out [max-step-count emulator-step-count]))
+         previous-emulator-memory-ref*/8)
 
 (require "../exn.rkt"
          "../registers.rkt"
 
          "memory.rkt"
          "program.rkt"
+         "runtime.rkt"
          "step.rkt"
          "state.rkt"
 
@@ -103,18 +71,19 @@
   (provide (struct-out Emulator)
            emulator-state))
 
-(define current-emulator (make-parameter #f))
-
-(struct Emulator ([states        #:mutable] ;; [Vectorof StepState?]
+(struct Emulator ([terminated?   #:mutable] ;; boolean?
+                  [states        #:mutable] ;; [Vectorof StepState?]
                   [current-index #:mutable] ;; integer?
                   memory                    ;; Memory?
                   labels->addresses)        ;; [Hashof label? address?]
   #:transparent)
-
 (define emulator? Emulator?)
 
+;; The number of slots to add to an emulator's states vector when the creation
+;; of a new state requires additional room.
 (define states-size-increment 32)
 
+;; Given a set of instructions, creates an [emulator?].
 (define (initialize-emulator instructions)
   (let* ([prog   (make-program instructions)]
          [mem    (make-memory-from-program prog)]
@@ -139,82 +108,108 @@
                             (list))]
          [states (make-vector states-size-increment #f)])
     (vector-set! states 0 state)
-    (Emulator states 0 mem addrs)))
+    (Emulator #f states 0 mem addrs)))
 
+;; Users often use the emulator in a relative fashion (e.g., "take two steps
+;; forward" or "take one step back"), but the indices of states in the state
+;; vector are absolute. This function performs the necessary conversion from a
+;; number of steps to a state index, calculated relative to the current index.
 (define (normalize-step-to-state-index who emulator step)
-  (match emulator
-    [(Emulator states index _ _)
-     (match step
-       ;; If [step] is not negative, it should correspond directly to a state
-       ;; index. Check that it isn't too big.
-       [(? exact-nonnegative-integer?)
-        (if (>= step (vector-length states))
-            (raise-a86-error who "step greater than number of states: ~v" step)
-            step)]
-       ;; If [step] is negative, it's meant to be relative to the current index.
-       ;; Check that the resulting index isn't negative.
-       [(? exact-integer?)  ;; NOTE: Always negative.
-        (let ([new-index (+ index step)])
-          (if (negative? new-index)
-              (raise-a86-error who "relative step results in invalid state: ~v" new-index)
-              new-index))]
-       ;; We allow [step] to be [#f] as a shorthand for retrieving the current
-       ;; state index.
-       [#f index]
-       ;; Anything else is problematic.
-       [_ (raise-a86-error who "invalid step: ~v" step)])]))
+  (let ([states (Emulator-states emulator)]
+        [index  (Emulator-current-index emulator)])
+    (match step
+      ;; If [step] is not negative, it should correspond directly to a state
+      ;; index. Check that it isn't too big.
+      [(? exact-nonnegative-integer?)
+       (if (>= step (vector-length states))
+           (raise-a86-error who "step greater than number of states: ~v" step)
+           step)]
+      ;; If [step] is negative, it's meant to be relative to the current index.
+      ;; Check that the resulting index isn't negative.
+      [(? exact-integer?)  ;; NOTE: Always negative.
+       (let ([new-index (+ index step)])
+         (if (negative? new-index)
+             (raise-a86-error who "relative step results in invalid state: ~v" new-index)
+             new-index))]
+      ;; We allow [step] to be [#f] as a shorthand for retrieving the current
+      ;; state index.
+      [#f index]
+      ;; Anything else is problematic.
+      [_ (raise-a86-error who "invalid step: ~v" step)])))
 
+;; Retrieves the currently selected state of the given emulator.
 (define (emulator-state emulator [step #f])
   (unless emulator
     (error 'emulator-state "no emulator set!"))
   (vector-ref (Emulator-states emulator)
               (normalize-step-to-state-index 'emulator-state emulator step)))
 
+;; The maximum number of steps any given emulator may take.
+(define max-step-count (make-parameter 10000))
+
+;; Moves the given [emulator] to the next state, if one is available. If the
+;; emulator has terminated already or if the attempt to step fails (e.g.,
+;; because the program has terminated), the emulator's state is not changed.
 (define (emulator-step! emulator)
   (match emulator
-    [(Emulator states old-index memory labels->addresses)
-     ;; TODO: Add new [exn?] for attempting to take a step when no steps can be
-     ;; taken, and maybe add a flag to [Emulator] that indicates whether steps
-     ;; can still be taken. When no steps can be taken, raise the exception here
-     ;; as well, and it should be handled elsewhere.
-     (let* ([new-index (add1 old-index)]
-            [states-length (vector-length states)]
-            ;; We check to see if we've already computed the next state.
-            [existing-next-state (and (< new-index states-length)
-                                      (vector-ref states new-index))])
-       ;; If the next state does not already exist, we need to build a new one.
-       (unless existing-next-state
-         ;; The old state is retrieved and used as the basis for the next step.
-         (let* ([old-state (vector-ref states old-index)]
-                [new-state (step/manual old-state memory labels->addresses)])
-           ;; If necessary, we extend the vector of states. The vector is grown
-           ;; by [states-size-increment] each time more space is needed.
-           (when (>= new-index states-length)
-             (let ([new-states (make-vector
-                                (+ states-length states-size-increment)
-                                #f)])
-               (vector-copy! new-states 0 states)
-               (set-Emulator-states! emulator new-states)
-               (set! states new-states)))
-           (vector-set! states new-index new-state)))
-       (set-Emulator-current-index! emulator new-index))]))
-
-;; Steps the emulator until either the new state is identical to the old state
-;; or [exn:fail:a86:emulator:out-of-steps] is raised, then returns politely.
-(define (emulator-multi-step! emulator)
-  (let recurse ([last-state (emulator-state emulator)])
-    (emulator-step! emulator)
-    (let ([new-state (emulator-state emulator)])
-      (unless (eq? new-state last-state)
-        (recurse new-state)))))
+    [(Emulator terminated? states old-index memory labels->addresses)
+     ;; Sometimes we won't do anything at all.
+     (cond
+       ;; Don't do anything if this emulator was previously terminated.
+       ;;
+       ;; TODO: Custom error?
+       [terminated?
+        (void)]
+       ;; Don't do anything if this emulator has taken the maximum number of
+       ;; steps allowed.
+       ;;
+       ;; TODO: Custom error?
+       [(>= old-index (max-step-count))
+        (set-Emulator-terminated?! emulator #t)]
+       ;; Otherwise, attempt to take a step.
+       [else
+        (let* ([new-index (add1 old-index)]
+              [states-length (vector-length states)]
+              ;; We check to see if we've already computed the next state.
+              [existing-next-state (and (< new-index states-length)
+                                        (vector-ref states new-index))])
+         ;; Have we already computed the next state?
+         (if existing-next-state
+             ;; Yes, so we just update the index.
+             (set-Emulator-current-index! emulator new-index)
+             ;; No, so we have to try to take a step. The old state is retrieved
+             ;; and used as the basis for the next one.
+             (let* ([old-state (vector-ref states old-index)]
+                    [new-state (step/manual old-state memory labels->addresses)])
+               ;; Check whether we actually took a step.
+               (if new-state
+                   ;; If we now have a new state, make sure we have room for it.
+                   (begin
+                     ;; If necessary, we extend the vector of states. The vector
+                     ;; is grown by [states-size-increment] each time more space
+                     ;; is needed.
+                     (when (>= new-index states-length)
+                       (let ([new-states (make-vector
+                                          (+ states-length states-size-increment)
+                                          #f)])
+                         (vector-copy! new-states 0 states)
+                         (set-Emulator-states! emulator new-states)
+                         (set! states new-states)))
+                     ;; Save the new state.
+                     (vector-set! states new-index new-state)
+                     ;; Switch to that new state.
+                     (set-Emulator-current-index! emulator new-index))
+                   ;; Otherwise, mark this emulator as terminated and take no
+                   ;; other actions.
+                   (set-Emulator-terminated?! emulator #t)))))])]))
 
 ;; NOTE: Cannot step backwards past the first state.
-;; TODO: Should this raise an exception instead?
+;;
+;; TODO: Should this raise an exception if we do attempt to step back too far?
 (define (emulator-step-back! emulator)
-  (set-Emulator-current-index!
-   emulator
-   (max (sub1 (Emulator-current-index emulator))
-        0)))
+  (set-Emulator-current-index! emulator
+                               (max (sub1 (Emulator-current-index emulator))
+                                    0)))
 
 (define-syntax (define-emulator-memory-ref stx)
   (syntax-parse stx
@@ -265,35 +260,124 @@
 (define (emulator-state->instruction-pointer state)
   (StepState-ip state))
 
+;; An [EmulatorContext] contains everything necessary to run the emulator:
+;;
+;;   name         The name of the context; used for switching to or inspecting.
+;;   emulator     The actual [emulator?] object for this context.
+;;   runtime      A [runtime?] to be used during execution.
+;;   input-port   An [input-port?] to use when the [runtime] attempts to obtain
+;;                user input during execution, or [#f] to disable.
+;;   output-port  Like [input-port] but with an [output-port?] for output.
+(struct EmulatorContext (name emulator runtime input-port output-port))
+(define context? EmulatorContext?)
+
+;; All of the initialized [EmulatorContext]s and the current context, if any.
+(define contexts        (make-parameter '()))
+(define current-context (make-parameter #f))
+
+;; Adds a new context to the [contexts]. This action is thread-permanent.
+(define (add-context! name
+                      emulator
+                      [runtime     empty-runtime]
+                      [input-port  #f]
+                      [output-port #f])
+  (let ([runtime (if (symbol? runtime)
+                     (or (name->runtime runtime)
+                         (raise-a86-error 'add-context! "unable to find runtime named ~s" runtime))
+                     runtime)])
+    (let ([new-context (EmulatorContext name emulator runtime input-port output-port)])
+      (contexts (cons new-context (contexts))))))
+
+;; Adds a new context to the [contexts] with a new emulator. This action is
+;; thread-permanent.
+(define (initialize-context! name
+                             instructions
+                             [runtime     empty-runtime]
+                             [input-port  #f]
+                             [output-port #f])
+  (let ([emulator (initialize-emulator instructions)])
+    (add-context! name
+                  emulator
+                  runtime
+                  input-port
+                  output-port)))
+
+;; Changes the [current-context] based on the [name-or-context].
+;;
+;; If [name-or-context] is a [context?], it is used directly. If
+;; [name-or-context] is a [symbol?], it is assumed to be the name of a context
+;; in the [contexts].
+;;
+;; If either [name-or-context] is not a [context?] or [symbol?] or if it is a
+;; [symbol?] but the name does not correspond to a context defined in the
+;; [contexts], an error is raised.
+(define (switch-context! name-or-context)
+  (match (match name-or-context
+           [(? context? context) context]
+           [(? symbol? context-name)
+            (findf (λ (context) (eq? context-name (EmulatorContext-name context)))
+                   (contexts))]
+           [_ (raise-user-error 'switch-context! "not a context or context name: ~v" name-or-context)])
+    [#f (raise-user-error 'switch-context! "no such context: ~a" name-or-context)]
+    [context
+     ;; Update the context appropriately.
+     (current-context context)
+     ;; And also update the runtime ports.
+     ;;
+     ;; TODO: The [runtime] parameters were written before this driver framework
+     ;; was established, so there's a bit of extra cruft around them. I'm
+     ;; delaying cleaning it up just to get things working, but I want to come
+     ;; back to this and figure out if there's a better way to arrange these so
+     ;; it feels less redundant.
+     (current-runtime             (current-context-runtime))
+     (current-runtime-input-port  (current-context-input-port))
+     (current-runtime-output-port (current-context-output-port))]))
+
+;; Defines a new [EmulatorContext] and switches to it. The arguments are the
+;; same as for [add-context!].
+(define (add-context-and-switch! . args)
+  (apply add-context! args)
+  (switch-context! (car (contexts))))
+
+;; Defines a new [EmulatorContext] with a new emulator and switches to it. The
+;; arguments are the same as for [initialize-context!].
+(define (initialize-context-and-switch! . args)
+  (apply initialize-context! args)
+  (switch-context! (car (contexts))))
+
+;; Parameters that provide direct access to the components of the current
+;; [EmulatorContext].
+(define (current-context-name)        (EmulatorContext-name        (current-context)))
+(define (current-context-emulator)    (EmulatorContext-emulator    (current-context)))
+(define (current-context-runtime)     (EmulatorContext-runtime     (current-context)))
+(define (current-context-input-port)  (EmulatorContext-input-port  (current-context)))
+(define (current-context-output-port) (EmulatorContext-output-port (current-context)))
 
 ;; Convenience functions for accessing the current state in the emulator.
 
 (define (current-emulator-step!)
-  (emulator-step! (current-emulator)))
-
-(define (current-emulator-multi-step!)
-  (emulator-multi-step! (current-emulator)))
+  (emulator-step! (current-context-emulator)))
 
 (define (current-emulator-step-back!)
-  (emulator-step-back! (current-emulator)))
+  (emulator-step-back! (current-context-emulator)))
 
 (define (current-emulator-address-readable? address)
-  (emulator-address-readable? (current-emulator) address))
+  (emulator-address-readable? (current-context-emulator) address))
 
 (define (current-emulator-address-writable? address)
-  (emulator-address-writable? (current-emulator) address))
+  (emulator-address-writable? (current-context-emulator) address))
 
 (define (current-emulator-state)
-  (emulator-state (current-emulator)))
+  (emulator-state (current-context-emulator)))
 
 (define (current-emulator-state-index)
-  (normalize-step-to-state-index 'current-emulator-state-index (current-emulator) #f))
+  (normalize-step-to-state-index 'current-emulator-state-index (current-context-emulator) #f))
 
 (define (current-emulator-instruction-pointer)
   (emulator-state->instruction-pointer (current-emulator-state)))
 
 (define (current-emulator-instruction)
-  (emulator-memory-ref (current-emulator) (emulator-state->instruction-pointer (current-emulator-state))))
+  (emulator-memory-ref (current-context-emulator) (emulator-state->instruction-pointer (current-emulator-state))))
 
 (define (current-emulator-flags)
   (emulator-state->flags (current-emulator-state)))
@@ -308,46 +392,45 @@
   (emulator-state-register-ref (current-emulator-state) register))
 
 (define (current-emulator-memory)
-  (Emulator-memory (current-emulator)))
+  (Emulator-memory (current-context-emulator)))
 
 (define (current-emulator-memory-ref address)
-  (emulator-memory-ref (current-emulator) address))
+  (emulator-memory-ref (current-context-emulator) address))
 
 (define (current-emulator-memory-ref/32 address)
-  (emulator-memory-ref/32 (current-emulator) address))
+  (emulator-memory-ref/32 (current-context-emulator) address))
 
 (define (current-emulator-memory-ref/16 address)
-  (emulator-memory-ref/16 (current-emulator) address))
+  (emulator-memory-ref/16 (current-context-emulator) address))
 
 (define (current-emulator-memory-ref/8 address)
-  (emulator-memory-ref/8 (current-emulator address)))
+  (emulator-memory-ref/8 (current-context-emulator address)))
 
 (define (current-emulator-memory-ref* address n)
-  (emulator-memory-ref* (current-emulator) address n))
+  (emulator-memory-ref* (current-context-emulator) address n))
 
 (define (current-emulator-memory-ref*/32 address n)
-  (emulator-memory-ref*/32 (current-emulator) address n))
+  (emulator-memory-ref*/32 (current-context-emulator) address n))
 
 (define (current-emulator-memory-ref*/16 address n)
-  (emulator-memory-ref*/16 (current-emulator) address n))
+  (emulator-memory-ref*/16 (current-context-emulator) address n))
 
 (define (current-emulator-memory-ref*/8 address n)
-  (emulator-memory-ref*/8 (current-emulator) address n))
-
+  (emulator-memory-ref*/8 (current-context-emulator) address n))
 
 ;; Convenience functions for accessing the previous state in the emulator.
 
 (define (previous-emulator-state)
-  (emulator-state (current-emulator) -1))
+  (emulator-state (current-context-emulator) -1))
 
 (define (previous-emulator-state-index)
-  (normalize-step-to-state-index 'previous-emulator-state-index (current-emulator) -1))
+  (normalize-step-to-state-index 'previous-emulator-state-index (current-context-emulator) -1))
 
 (define (previous-emulator-instruction-pointer)
   (emulator-state->instruction-pointer (previous-emulator-state)))
 
 (define (previous-emulator-instruction)
-  (emulator-memory-ref (current-emulator) (emulator-state->instruction-pointer (previous-emulator-state)) -1))
+  (emulator-memory-ref (current-context-emulator) (emulator-state->instruction-pointer (previous-emulator-state)) -1))
 
 (define (previous-emulator-flags)
   (with-handlers ([exn:fail:a86? (λ _ #f)])
@@ -366,25 +449,25 @@
     (emulator-state-register-ref (previous-emulator-state) register)))
 
 (define (previous-emulator-memory-ref address)
-  (emulator-memory-ref (current-emulator) address -1))
+  (emulator-memory-ref (current-context-emulator) address -1))
 
 (define (previous-emulator-memory-ref/32 address)
-  (emulator-memory-ref/32 (current-emulator) address -1))
+  (emulator-memory-ref/32 (current-context-emulator) address -1))
 
 (define (previous-emulator-memory-ref/16 address)
-  (emulator-memory-ref/16 (current-emulator) address -1))
+  (emulator-memory-ref/16 (current-context-emulator) address -1))
 
 (define (previous-emulator-memory-ref/8 address)
-  (emulator-memory-ref/8 (current-emulator) address -1))
+  (emulator-memory-ref/8 (current-context-emulator) address -1))
 
 (define (previous-emulator-memory-ref* address n)
-  (emulator-memory-ref* (current-emulator) address n -1))
+  (emulator-memory-ref* (current-context-emulator) address n -1))
 
 (define (previous-emulator-memory-ref*/32 address n)
-  (emulator-memory-ref*/32 (current-emulator) address n -1))
+  (emulator-memory-ref*/32 (current-context-emulator) address n -1))
 
 (define (previous-emulator-memory-ref*/16 address n)
-  (emulator-memory-ref*/16 (current-emulator) address n -1))
+  (emulator-memory-ref*/16 (current-context-emulator) address n -1))
 
 (define (previous-emulator-memory-ref*/8 address n)
-  (emulator-memory-ref*/8 (current-emulator) address n -1))
+  (emulator-memory-ref*/8 (current-context-emulator) address n -1))

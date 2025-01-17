@@ -9,8 +9,6 @@
          "../../../../a86/emulate.rkt"
          "../../../../a86/emulate/runtimes.rkt")
 
-(current-runtime mug)
-
 (define test-specs
   `(["Abscond"   [ 7 [ 7]]
                  [-8 [-8]]]
@@ -194,16 +192,14 @@
     #;["Mug"       []]))
 
 (define (run e)
-  (parameterize ([persist-current-emulator? #t])
-    (match (asm-emulate (compile (apply parse e)))
-      ['err 'err]
-      [bs (bits->value bs)])))
+  (match (asm-emulate (compile (apply parse e)) mug)
+    ['err 'err]
+    [bs (bits->value bs)]))
 
 (define (run/io in e)
-  (parameterize ([persist-current-emulator? #t])
-    (match (asm-emulate/io (compile (apply parse e)) in)
-      [(cons 'err out) (cons 'err             out)]
-      [(cons bs   out) (cons (bits->value bs) out)])))
+  (match (asm-emulate/io (compile (apply parse e)) mug in)
+    [(cons 'err out) (cons 'err             out)]
+    [(cons bs   out) (cons (bits->value bs) out)]))
 
 (module+ test
   (require "../../test-specs.rkt")

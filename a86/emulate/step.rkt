@@ -180,7 +180,8 @@
 ;; The maximum number of steps.
 (define max-step-count (make-parameter 10000))
 
-;; Executes a single step in the interpreter, producing a new [StepState?].
+;; Executes a single step in the interpreter, producing a new [StepState?] (if
+;; possible) or [#f] (if no step can be taken).
 ;;
 ;; The interpreter works by reading the next instruction from memory according
 ;; to the [ip] field of the given [StepState?]. Memory is modified in-place,
@@ -189,6 +190,7 @@
 (define (step/manual step-state memory labels->addresses)
   (match step-state
     [(StepState time-tick ip flags registers _ _ _)
+     ;; FIXME: remove this; track steps in [emulator.rkt] instead
      (when (>= (sub1 time-tick) (max-step-count))
        (raise-a86-emulator-out-of-steps-error 'step/manual "Out of steps!"))
      (let* ([current-instruction (original-memory-ref memory ip)]

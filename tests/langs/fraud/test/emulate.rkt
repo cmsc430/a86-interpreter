@@ -9,8 +9,6 @@
          "../../../../a86/emulate.rkt"
          "../../../../a86/emulate/runtimes.rkt")
 
-(current-runtime fraud)
-
 (define test-specs
   `(["Abscond"   [ 7  7]
                  [-8 -8]]
@@ -110,12 +108,12 @@
                  [(""   97)      ("b"  (let ([x 97]) (begin (peek-byte) x)))]]))
 
 (define (run e)
-  (match (asm-emulate (compile (parse e)))
+  (match (asm-emulate (compile (parse e)) fraud)
     ['err 'err]
     [bs (bits->value bs)]))
 
 (define (run/io in e)
-  (match (asm-emulate/io (compile (parse e)) in)
+  (match (asm-emulate/io (compile (parse e)) fraud in)
     [(cons 'err out) (cons 'err             out)]
     [(cons bs   out) (cons (bits->value bs) out)]))
 

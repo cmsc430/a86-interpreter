@@ -11,6 +11,7 @@
          "emulator.rkt"
          "memory.rkt"
          "state.rkt"
+
          (submod "emulator.rkt" private))
 
 (define default-stacktrace-expanded-count 25)
@@ -20,12 +21,12 @@
                             [expanded default-stacktrace-expanded-count]
                             [condensed default-stacktrace-condensed-count])
   (display (format-stacktrace (or emulator
-                                  (current-emulator))
+                                  (current-context-emulator))
                               expanded condensed)))
 
 (define (display-instructions [emulator #f])
   (display (format-instructions (or emulator
-                                    (current-emulator)))))
+                                    (current-context-emulator)))))
 
 (define (format-instructions emulator)
   (let* ([memory (Emulator-memory emulator)]
@@ -45,26 +46,27 @@
 ;; rendered.
 (define (format-stacktrace emulator [expanded 25] [condensed 50])
   (parameterize ([debug-on? #f])
-    (match emulator
-      [(Emulator states current-index memory _)
-       (let ([max-tick-width (string-length (format "~a" current-index))])
-         (string-join
-          (for/list ([idx+exp? (for/list ([idx (in-inclusive-range
-                                                (- current-index expanded condensed)
-                                                current-index)]
-                                          [exp? (in-list (append (make-list condensed #f)
-                                                                 (make-list expanded  #t)))]
-                                          #:when (positive? idx))
-                                 (cons idx exp?))])
-            (let* ([succ-idx (car idx+exp?)]
-                   [base-idx (sub1 succ-idx)]
-                   [exp? (cdr idx+exp?)])
-              (format-steptrace memory
-                                (vector-ref states base-idx)
-                                (vector-ref states succ-idx)
-                                max-tick-width
-                                exp?)))
-          ""))])))
+    (let* ([states         (Emulator-states        emulator)]
+           [current-index  (Emulator-current-index emulator)]
+           [memory         (Emulator-memory        emulator)]
+           [max-tick-width (string-length (format "~a" current-index))])
+      (string-join
+       (for/list ([idx+exp? (for/list ([idx (in-inclusive-range
+                                             (- current-index expanded condensed)
+                                             current-index)]
+                                       [exp? (in-list (append (make-list condensed #f)
+                                                              (make-list expanded  #t)))]
+                                       #:when (positive? idx))
+                              (cons idx exp?))])
+         (let* ([succ-idx (car idx+exp?)]
+                [base-idx (sub1 succ-idx)]
+                [exp? (cdr idx+exp?)])
+           (format-steptrace memory
+                             (vector-ref states base-idx)
+                             (vector-ref states succ-idx)
+                             max-tick-width
+                             exp?)))
+       ""))))
 
 ;; Formats a single state from memory as a string. If not [expanded?], the
 ;; string will take one line. If [expanded?], the string will take multiple

@@ -19,27 +19,19 @@
           [ptr-ref                         (->* [a86-value? etype?]
                                                 (nonnegative-integer?)
                                                 result/c)]
-          [step-count                      (parameter/c integer?)]
-          [current-emulator                (parameter/c emulator?)]
-          [persist-current-emulator?       (parameter/c boolean?)]
-          [run-emulator                    (-> (listof instruction?) input-port? output-port? any/c)]
+          [max-step-count                  (parameter/c integer?)]
+          [run-emulator                    (-> (listof instruction?)
+                                               symbol?
+                                               input-port?
+                                               output-port?
+                                               any/c)]
           [asm-emulate                     (->* [(or/c #f (listof instruction?))]
-                                                [#:before   (-> any/c)
-                                                 #:during   (-> any/c)
-                                                 #:after    (-> any/c)
-                                                 #:on-exit  (-> any/c any/c)
-                                                 #:on-exn   (-> exn?  any/c)
-                                                 #:on-raise (-> any/c any/c)]
+                                                [(or/c #f runtime? symbol?)]
                                                 any/c)]
-          [asm-emulate/io                  (->* [(or/c #f (listof instruction?))
-                                                 input-port?]
-                                                [output-port?
-                                                 #:before   (-> any/c)
-                                                 #:during   (-> any/c)
-                                                 #:after    (-> any/c)
-                                                 #:on-exit  (-> any/c any/c)
-                                                 #:on-exn   (-> exn?  any/c)
-                                                 #:on-raise (-> any/c any/c)]
+          [asm-emulate/io                  (->* [(or/c #f (listof instruction?))]
+                                                [(or/c #f runtime? symbol?)
+                                                 input-port?
+                                                 output-port?]
                                                 any/c)]))
 
 (require "../ast.rkt"
@@ -48,9 +40,8 @@
 
          "emulate.rkt"
          "emulator.rkt"
-         "type-tools.rkt"
-
-         (rename-in "emulator.rkt" [emulator-step-count step-count]))
+         "runtime.rkt"
+         "type-tools.rkt")
 
 (define result/c (integer-in (convert min-signed    int64)
                              (convert max-unsigned uint64)))

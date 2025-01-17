@@ -9,8 +9,6 @@
          "../../../../a86/emulate.rkt"
          "../../../../a86/emulate/runtimes.rkt")
 
-(current-runtime iniquity)
-
 (define test-specs
   `(["Abscond"   [ 7 [ 7]]
                  [-8 [-8]]]
@@ -228,16 +226,14 @@
                                           (f z 98))])]]))
 
 (define (run e)
-  (parameterize ([persist-current-emulator? #t])
-    (match (asm-emulate (compile (apply parse e)))
-      ['err 'err]
-      [bs (bits->value bs)])))
+  (match (asm-emulate (compile (apply parse e)) iniquity)
+    ['err 'err]
+    [bs (bits->value bs)]))
 
 (define (run/io in e)
-  (parameterize ([persist-current-emulator? #t])
-    (match (asm-emulate/io (compile (apply parse e)) in)
-      [(cons 'err out) (cons 'err             out)]
-      [(cons bs   out) (cons (bits->value bs) out)])))
+  (match (asm-emulate/io (compile (apply parse e)) iniquity in)
+    [(cons 'err out) (cons 'err             out)]
+    [(cons bs   out) (cons (bits->value bs) out)]))
 
 (module+ test
   (require "../../test-specs.rkt")

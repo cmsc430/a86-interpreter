@@ -70,7 +70,7 @@
                                                    (->          symbol? runtime-function?))]
           ;; Finding defined runtimes.
           [runtime-exists?                 (-> symbol? boolean?)]
-          [name->runtime                   (-> symbol? runtime?)])
+          [name->runtime                   (-> symbol? (or/c #f runtime?))])
          ;; Defining runtimes.
          define-runtimes)
 
