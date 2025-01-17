@@ -32,7 +32,11 @@
          aligned-to-word?
          seq
          split-first
-         filter*)
+         filter*
+         assoc-set)
+
+(require (for-syntax racket/syntax
+                     syntax/parse))
 
 ;; The size of words, given in bytes.  This language is defined only for 64-bit
 ;; architectures, so we use 8-byte words.
@@ -307,6 +311,18 @@
        (discard xss (cons xs yss) (add1 lst-idx))]))
 
   (descend lsts #f))
+
+(define (assoc-set v a lst [is-equal? equal?])
+  (let loop ([acc '()]
+             [lst lst])
+    (match lst
+      ['() #f]
+      [(cons (and p (cons x _)) lst)
+       (if (is-equal? v x)
+           (append (reverse acc)
+                   (cons (cons v a) lst))
+           (loop (cons p acc)
+                 lst))])))
 
 ;; An extended version of [racket/syntax].
 (module* racket/syntax #f

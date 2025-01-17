@@ -16,7 +16,8 @@
          "show.rkt")
 
 (provide repl-catch-errors?
-         repl-loop
+         repl/loop
+         repl/run
          show-state
          quit
 
@@ -24,23 +25,90 @@
 
 (define repl-catch-errors? (make-parameter #t))
 
-(define (repl-loop)
-  (with-handlers ([exn? (λ (e)
-                          (if (repl-catch-errors?)
-                              (begin (displayln (exn-message e))
-                                     (repl-loop))
-                              (raise e)))])
-    (match (parse (prompt))
-      [(cons command args)
-       (with-handlers ([exn:fail:a86:user:repl:bad-command?
-                        (λ (e)
-                          (displayln (format "command not supported: ~a" (exn:fail:a86:user:repl:bad-command-name e))))])
-         (apply commands-invoke command args))
-       (repl-loop)]
-      ['()
-       (repl-loop)]
-      [#f
-       (displayln "")])))
+(define (repl/loop)
+  (with-handlers ([exn:fail?
+                   (λ (e)
+                     (if (repl-catch-errors?)
+                         (begin (displayln (exn-message e))
+                                (repl/loop))
+                         (raise e)))])
+    (let loop ()
+      (repl-prompt)
+      (loop))))
+
+
+;; FIXME FIXME FIXME
+;;
+;; TODO: use [repl/run] as single entry point? if yes, move [parameterize] and
+;; [with-handlers] to a separate [repl/exec] function with a thunk body
+
+(define (repl/exec body-thunk
+                   #:repl-on-error?       [repl-on-error?       #f]  ;; TODO
+                   #:repl-on-termination? [repl-on-termination? #f])
+  (parameterize ([exit-handler
+                  (λ (v)
+                    (if repl-on-termination?
+                        (begin (displayln (format "program exited with status: ~a" v))
+                               (repl/loop))
+                        (raise-user-error (current-context-name) "program exited with status: ~a" v)))])
+    (with-handlers ([exn:fail?
+                     (λ (e)
+                       (if repl-on-error?
+                           (begin (displayln (exn-message e))
+                                  (repl/loop))
+                           (raise e)))]
+                    [(λ (v) (not (exn? v)))
+                     (λ (v)
+                       (if repl-on-termination?
+                           (begin (displayln (format "program returned value: ~v" v))
+                                  (repl/loop))
+                           v))])
+      ;; FIXME
+      #;(current-emulator-multi-step!)
+      #f))
+  (when repl-on-termination?
+    (repl/loop)))
+
+
+(define (repl/run #:run-to-completion?   [run-to-completion    #f]
+                  #:repl-on-error?       [repl-on-error?       #f]
+                  #:repl-on-termination? [repl-on-termination? #f])
+  (parameterize ([exit-handler
+                  (λ (v)
+                    (if repl-on-termination?
+                        (begin (displayln (format "program exited with status: ~a" v))
+                               (repl/loop))
+                        (raise-user-error (current-context-name) "program exited with status: ~a" v)))])
+    (with-handlers ([exn:fail?
+                     (λ (e)
+                       (if repl-on-error?
+                           (begin (displayln (exn-message e))
+                                  (repl/loop))
+                           (raise e)))]
+                    [(λ (v) (not (exn? v)))
+                     (λ (v)
+                       (if repl-on-termination?
+                           (begin (displayln (format "program returned value: ~v" v))
+                                  (repl/loop))
+                           v))])
+      ;; FIXME
+      #;(current-emulator-multi-step!)
+      #f))
+  (when repl-on-termination?
+    (repl/loop)))
+
+(define (repl-prompt)
+  (match (parse (prompt))
+    [(cons command args)
+     (with-handlers ([exn:fail:a86:user:repl:bad-command?
+                      (λ (e)
+                        (displayln (format "command not supported: ~a" (exn:fail:a86:user:repl:bad-command-name e))))])
+       (apply commands-invoke command args))
+     (repl-prompt)]
+    ['()
+     (repl-prompt)]
+    [#f
+     (displayln "")]))
 
 (define (display-help [command-name #f])
   (if command-name
@@ -49,7 +117,7 @@
 
 (define (show-state . xs)
   (cond
-    [(not (current-emulator))
+    [(not (current-context-emulator))
      (displayln "Emulator not currently running.")]
     [(empty? xs)
      ((current-repl-show-proc))]
@@ -162,15 +230,14 @@
     (show-state)))
 
 (define (run-to-end)
-  (let recurse ([prev-state (current-emulator-state)])
-    (current-emulator-step!)
-    (let ([curr-state (current-emulator-state)])
-      (with-repl-show-mode 'simple (show-state))
-      (if (eq? prev-state curr-state)
-          (with-repl-show-mode 'compact
-            (displayln "")
-            (show-state))
-          (recurse curr-state)))))
+  ;; FIXME
+  #;(current-emulator-multi-step!
+   void
+   (λ () (with-repl-show-mode 'simple (show-state))))
+  #f
+  (with-repl-show-mode 'compact
+    (displayln "")
+    (show-state)))
 
 (define (quit) #f)
 
@@ -180,7 +247,7 @@
     (λ () (read-instructions))))
 
 ;; TODO: Move elsewhere.
-(define (load-program path)
+#;(define (load-program path)
   (let ([instructions (read-instructions-from-file (symbol->string path))])
     (reload-emulator instructions #f #f)))
 
@@ -191,4 +258,4 @@
    [( show  s)    show-state   "Display information."]
    [(:quit :q)    quit         "Exit the REPL."]
    [(:help :h :?) display-help "Displays helpful information (allegedly)."]
-   [(:load :l)    load-program "Loads an a86 program from a given file path."]))
+   #;[(:load :l)    load-program "Loads an a86 program from a given file path."]))
